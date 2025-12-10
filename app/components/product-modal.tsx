@@ -3,37 +3,34 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { ReviewsSection } from "./reviews-section";
 
 type CatalogItem = {
   id: string;
   name: string;
+  description: string | null;
   category: string;
-  harvestWindow: string;
-  priceRange: string;
-  availability: "Alta" | "Media" | "Baja";
-  sustainability: string;
-  highlights: string[];
-  producerSlug?: string;
-  producerName?: string;
-  sellerName?: string;
-  location?: string;
-  badges?: string[];
-  image_url?: string;
-  stock?: number;
+  price: number;
+  stock: number;
+  images: string[];
+  materials: string[];
+  dimensions: string | null;
+  weight: number | null;
+  artisan_name?: string;
+  artisan_id?: string;
+  artisan_profiles?: {
+    region: string;
+    ciudad: string | null;
+    specialties: string[];
+  };
+  avg_rating?: number;
+  reviews_count?: number;
 };
 
 function getProductImage(product: CatalogItem): string {
-  // Si tiene image_url en la base de datos, usarla
-  if (product.image_url) {
-    return product.image_url;
+  if (product.images && product.images.length > 0) {
+    return product.images[0];
   }
-  // Fallback a mapeo por nombre si existe
-  const nameLower = product.name.toLowerCase();
-  if (nameLower.includes("espinaca")) return "/espinaca-baby.jpg";
-  if (nameLower.includes("betarraga")) return "/betarraga.jpg";
-  if (nameLower.includes("huevo")) return "/huevos-azules.jpg";
-  if (nameLower.includes("tomate")) return "/TOMATE.jpg";
-  if (nameLower.includes("zapallo")) return "/ZAPALLO.jpg";
   return "/next.svg";
 }
 
@@ -58,15 +55,17 @@ export function ProductModal({
 }: ProductModalProps) {
   const [quantity, setQuantity] = useState(1);
   const [showQuantityInput, setShowQuantityInput] = useState(false);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = "hidden";
       setQuantity(1);
-      // Siempre mostrar el input de cantidad cuando se abre el modal
-      setShowQuantityInput(true);
+      setShowQuantityInput(false); // No mostrar input inmediatamente
+      setCurrentImageIndex(0);
     } else {
       document.body.style.overflow = "unset";
+      setShowQuantityInput(false); // Resetear cuando se cierra
     }
     return () => {
       document.body.style.overflow = "unset";
@@ -76,6 +75,7 @@ export function ProductModal({
   if (!isOpen || !product) return null;
 
   const cartQuantity = cart[product.id] || 0;
+  const images = product.images && product.images.length > 0 ? product.images : ["/next.svg"];
 
   return (
     <>
@@ -88,7 +88,7 @@ export function ProductModal({
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div
-          className="relative w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-3xl bg-slate-900 border border-white/10 shadow-2xl"
+          className="relative w-full max-w-6xl max-h-[95vh] overflow-y-auto rounded-3xl bg-slate-900 border border-white/10 shadow-2xl"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Botón cerrar */}
@@ -112,23 +112,48 @@ export function ProductModal({
             </svg>
           </button>
 
-          <div className="grid gap-0 lg:grid-cols-2">
-            {/* Imagen completa a la izquierda */}
-            <div className="relative w-full bg-slate-950">
-              <div className="relative aspect-square w-full lg:aspect-[4/5]">
-                <Image
-                  src={getProductImage(product)}
-                  alt={product.name}
-                  fill
-                  className="object-cover"
-                  sizes="(max-width: 1024px) 100vw, 50vw"
-                  priority
-                />
+          <div className="flex flex-col">
+            {/* Sección superior: Imagen e información */}
+            <div className="grid gap-0 lg:grid-cols-2">
+              {/* Imágenes a la izquierda */}
+              <div className="relative w-full bg-slate-950">
+                <div className="relative aspect-square w-full lg:aspect-[4/5]">
+                  <Image
+                    src={images[currentImageIndex]}
+                    alt={product.name}
+                    fill
+                    className="object-cover"
+                    sizes="(max-width: 1024px) 100vw, 50vw"
+                    priority
+                  />
+                </div>
+                {images.length > 1 && (
+                  <div className="absolute bottom-4 left-4 right-4 flex gap-2 overflow-x-auto">
+                    {images.map((img, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => setCurrentImageIndex(idx)}
+                        className={`relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg border-2 transition ${
+                          currentImageIndex === idx
+                            ? "border-emerald-500"
+                            : "border-white/20"
+                        }`}
+                      >
+                        <Image
+                          src={img}
+                          alt={`${product.name} ${idx + 1}`}
+                          fill
+                          className="object-cover"
+                          sizes="64px"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
 
-            {/* Información del producto a la derecha */}
-            <div className="flex flex-col gap-6 p-8">
+              {/* Información del producto a la derecha */}
+              <div className="flex flex-col gap-6 p-8">
               <div className="space-y-3">
                 <p className="text-xs font-semibold uppercase text-emerald-400">
                   {product.category}
@@ -136,76 +161,101 @@ export function ProductModal({
                 <h2 className="text-3xl font-semibold text-white">
                   {product.name}
                 </h2>
-                <p className="text-base text-emerald-100">{product.harvestWindow}</p>
-                <div className="flex flex-wrap gap-2 text-xs font-semibold text-emerald-300">
-                  {(product.badges || []).map((badge) => (
-                    <span
-                      key={`${product.id}-${badge}`}
-                      className="rounded-full border border-emerald-500/50 bg-emerald-900/30 px-3 py-1"
-                    >
-                      {badge}
+                {product.description && (
+                  <p className="text-base text-emerald-100">{product.description}</p>
+                )}
+                {product.avg_rating && product.avg_rating > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-amber-400 text-lg">★</span>
+                    <span className="text-lg font-semibold text-white">
+                      {product.avg_rating.toFixed(1)}
                     </span>
-                  ))}
-                </div>
+                    <span className="text-sm text-emerald-200">
+                      ({product.reviews_count || 0} {product.reviews_count === 1 ? "reseña" : "reseñas"})
+                    </span>
+                  </div>
+                )}
+                {product.materials && product.materials.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {product.materials.map((material, idx) => (
+                      <span
+                        key={idx}
+                        className="rounded-full border border-emerald-500/50 bg-emerald-900/30 px-3 py-1 text-xs font-semibold text-emerald-300"
+                      >
+                        {material}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="grid gap-4 border-t border-white/10 pt-6 text-sm text-emerald-100">
                 <div>
-                  <span className="text-emerald-300">Precio guía:</span>{" "}
-                  <span className="font-semibold text-white">
-                    {product.priceRange}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-emerald-300">Disponibilidad:</span>{" "}
-                  <span className="font-semibold text-white">
-                    {product.availability}
+                  <span className="text-emerald-300">Precio:</span>{" "}
+                  <span className="text-xl font-semibold text-white">
+                    ${product.price.toLocaleString('es-CL')}
                   </span>
                 </div>
                 <div>
                   <span className="text-emerald-300">Stock disponible:</span>{" "}
                   <span className={`font-semibold ${
-                    (product.stock || 0) > 0 ? "text-white" : "text-red-400"
+                    product.stock > 0 ? "text-white" : "text-red-400"
                   }`}>
-                    {product.stock || 0} unidades
+                    {product.stock} unidades
                   </span>
                 </div>
+                {product.dimensions && (
+                  <div>
+                    <span className="text-emerald-300">Dimensiones:</span>{" "}
+                    <span className="font-semibold text-white">
+                      {product.dimensions}
+                    </span>
+                  </div>
+                )}
+                {product.weight && (
+                  <div>
+                    <span className="text-emerald-300">Peso:</span>{" "}
+                    <span className="font-semibold text-white">
+                      {product.weight}g
+                    </span>
+                  </div>
+                )}
                 <div>
-                  <span className="text-emerald-300">Prácticas:</span>{" "}
+                  <span className="text-emerald-300">Artesano:</span>{" "}
                   <span className="font-semibold text-white">
-                    {product.sustainability}
+                    {product.artisan_name || "No especificado"}
                   </span>
                 </div>
-                <div>
-                  <span className="text-emerald-300">Vendedor:</span>{" "}
-                  <span className="font-semibold text-white">
-                    {product.sellerName || product.producerName || "No especificado"}
-                  </span>
-                </div>
+                {product.artisan_profiles && (
+                  <div>
+                    <span className="text-emerald-300">Región:</span>{" "}
+                    <span className="font-semibold text-white">
+                      {product.artisan_profiles.region}
+                      {product.artisan_profiles.ciudad && `, ${product.artisan_profiles.ciudad}`}
+                    </span>
+                  </div>
+                )}
               </div>
 
-              <div className="border-t border-white/10 pt-6">
-                <p className="mb-3 text-sm font-semibold text-emerald-100">
-                  Características destacadas:
-                </p>
-                <ul className="space-y-2 text-sm text-emerald-100">
-                  {product.highlights.map((highlight) => (
-                    <li key={highlight} className="flex items-start gap-2">
-                      <span className="mt-1 text-emerald-400">•</span>
-                      <span>{highlight}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+              {product.materials && product.materials.length > 0 && (
+                <div className="border-t border-white/10 pt-6">
+                  <p className="mb-3 text-sm font-semibold text-emerald-100">
+                    Materiales utilizados:
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {product.materials.map((material, idx) => (
+                      <span
+                        key={idx}
+                        className="rounded-lg border border-emerald-500/30 bg-emerald-900/20 px-3 py-1 text-sm text-emerald-200"
+                      >
+                        {material}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="mt-auto space-y-3 border-t border-white/10 pt-6">
-                <Link
-                  href={`/productores/${product.producerSlug}`}
-                  onClick={onClose}
-                  className="flex w-full items-center justify-center rounded-2xl border border-white/10 bg-slate-800/50 px-4 py-3 text-sm font-semibold text-emerald-100 transition hover:border-emerald-500 hover:bg-emerald-900/30 hover:text-emerald-300"
-                >
-                  Ver perfil del productor
-                </Link>
                 
                 {showQuantityInput ? (
                   <div className="space-y-3">
@@ -216,16 +266,15 @@ export function ProductModal({
                       <input
                         type="number"
                         min="1"
-                        max={product.stock || 0}
+                        max={product.stock}
                         value={quantity}
                         onChange={(e) => {
                           const val = parseInt(e.target.value, 10);
-                          const availableStock = product.stock || 0;
+                          const availableStock = product.stock;
                           const currentCartQuantity = cart[product.id] || 0;
                           const maxAllowed = availableStock - currentCartQuantity;
                           
                           if (!isNaN(val) && val > 0) {
-                            // Limitar el valor al stock disponible
                             const limitedVal = Math.min(val, maxAllowed);
                             setQuantity(limitedVal);
                             if (val > maxAllowed) {
@@ -241,7 +290,7 @@ export function ProductModal({
                       <button
                         type="button"
                         onClick={() => {
-                          const availableStock = product.stock || 0;
+                          const availableStock = product.stock;
                           const currentCartQuantity = cart[product.id] || 0;
                           const maxAllowed = availableStock - currentCartQuantity;
                           
@@ -253,7 +302,7 @@ export function ProductModal({
                             alert(`No puedes agregar más de ${maxAllowed} unidades. Stock disponible: ${availableStock} unidades. Ya tienes ${currentCartQuantity} en el carrito.`);
                           }
                         }}
-                        disabled={quantity <= 0 || (product.stock || 0) <= 0}
+                        disabled={quantity <= 0 || product.stock <= 0}
                         className="flex-1 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-600 disabled:opacity-50"
                       >
                         Agregar {quantity} al carrito
@@ -286,9 +335,9 @@ export function ProductModal({
                       <button
                         type="button"
                         onClick={() => onAddToCart(product.id)}
-                        disabled={(cartQuantity || 0) >= (product.stock || 0)}
+                        disabled={cartQuantity >= product.stock}
                         className="flex h-10 w-10 items-center justify-center rounded-full border border-emerald-400 bg-slate-800/50 text-emerald-300 transition hover:bg-emerald-900/30 disabled:cursor-not-allowed disabled:opacity-50"
-                        title={(cartQuantity || 0) >= (product.stock || 0) ? "Stock máximo alcanzado" : "Agregar más"}
+                        title={cartQuantity >= product.stock ? "Stock máximo alcanzado" : "Agregar más"}
                       >
                         +
                       </button>
@@ -305,20 +354,34 @@ export function ProductModal({
                   <button
                     type="button"
                     onClick={() => {
-                      if ((product.stock || 0) > 0) {
+                      if (product.stock > 0) {
                         setShowQuantityInput(true);
                       } else {
                         alert("Este producto no tiene stock disponible.");
                       }
                     }}
-                    disabled={(product.stock || 0) <= 0}
+                    disabled={product.stock <= 0}
                     className="flex w-full items-center justify-center rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-600 disabled:opacity-50"
                   >
-                    {(product.stock || 0) > 0 ? "Añadir al carrito" : "Sin stock disponible"}
+                    {product.stock > 0 ? "Añadir al carrito" : "Sin stock disponible"}
                   </button>
                 )}
               </div>
             </div>
+          </div>
+
+          {/* Sección de reseñas - Ancho completo */}
+          <div className="border-t border-white/10 bg-slate-800/30 p-8">
+            <div className="max-w-4xl mx-auto">
+              <ReviewsSection
+                productId={product.id}
+                artisanId={product.artisan_id}
+                showForm={false}
+                orderId={undefined}
+                darkMode={true}
+              />
+            </div>
+          </div>
           </div>
         </div>
       </div>

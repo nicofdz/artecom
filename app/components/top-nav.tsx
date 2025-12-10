@@ -8,10 +8,9 @@ import { getCart, getCartCount } from "../lib/cart";
 const navLinks = [
   { label: "Inicio", href: "/" },
   { label: "Catálogo", href: "/catalogo" },
-  { label: "Pedidos", href: "/pedido" },
-  { label: "Productores", href: "/productores" },
-  { label: "Agricultores", href: "/agricultores" },
-  { label: "Contacto", href: "/#contacto" },
+  { label: "Pedidos", href: "/pedidos" },
+  { label: "Artesanos", href: "/artesanos" },
+  { label: "Contacto", href: "/contacto" },
 ];
 
 type TopNavProps = {
@@ -25,9 +24,9 @@ export function TopNav({ cartCount: propCartCount, cartHref: propCartHref }: Top
   const [cartCount, setCartCount] = useState(propCartCount ?? 0);
   const [cartHref, setCartHref] = useState(propCartHref);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  
+
   const userType = user?.user_metadata?.user_type;
-  const userTypeLabel = userType === "restaurante" ? "Restaurante" : userType === "agricultor" ? "Agricultor" : null;
+  const userTypeLabel = userType === "comprador" ? "Comprador" : userType === "artesano" ? "Artesano" : null;
 
   // Cargar carrito desde localStorage si no se pasa como prop
   useEffect(() => {
@@ -35,7 +34,7 @@ export function TopNav({ cartCount: propCartCount, cartHref: propCartHref }: Top
       const cart = getCart();
       const count = getCartCount(cart);
       setCartCount(count);
-      
+
       if (count > 0) {
         const items = Object.entries(cart)
           .map(([id, qty]) => `${id}:${qty}`)
@@ -57,7 +56,7 @@ export function TopNav({ cartCount: propCartCount, cartHref: propCartHref }: Top
         const cart = getCart();
         const count = getCartCount(cart);
         setCartCount(count);
-        
+
         if (count > 0) {
           const items = Object.entries(cart)
             .map(([id, qty]) => `${id}:${qty}`)
@@ -72,7 +71,7 @@ export function TopNav({ cartCount: propCartCount, cartHref: propCartHref }: Top
     window.addEventListener("storage", handleStorageChange);
     // También escuchar eventos personalizados para cambios en la misma pestaña
     window.addEventListener("cart-updated", handleStorageChange);
-    
+
     return () => {
       window.removeEventListener("storage", handleStorageChange);
       window.removeEventListener("cart-updated", handleStorageChange);
@@ -83,7 +82,7 @@ export function TopNav({ cartCount: propCartCount, cartHref: propCartHref }: Top
 
   // Función para cargar el conteo
   const loadCancelCount = useCallback(() => {
-    if (user && userType === "restaurante") {
+    if (user && userType === "comprador") {
       fetch(`/api/orders/cancel-count?user_id=${user.id}`)
         .then((res) => res.json())
         .then((data) => {
@@ -97,14 +96,14 @@ export function TopNav({ cartCount: propCartCount, cartHref: propCartHref }: Top
     }
   }, [user, userType]);
 
-  // Cargar conteo de pedidos cancelados para restaurantes
+  // Cargar conteo de pedidos cancelados para compradores
   useEffect(() => {
     loadCancelCount();
   }, [loadCancelCount]);
 
   // Refrescar conteo cada 30 segundos
   useEffect(() => {
-    if (user && userType === "restaurante") {
+    if (user && userType === "comprador") {
       const interval = setInterval(() => {
         loadCancelCount();
       }, 30000); // 30 segundos
@@ -131,9 +130,9 @@ export function TopNav({ cartCount: propCartCount, cartHref: propCartHref }: Top
         {/* Desktop Navbar */}
         <div className="hidden md:flex items-center justify-between gap-4 text-white">
           <Link href="/" className="text-lg font-semibold tracking-[0.2em] whitespace-nowrap">
-            AgroLink
+            ArteCom
           </Link>
-          
+
           <div className="flex items-center gap-2 text-sm font-semibold text-emerald-100">
             <Link
               href="/"
@@ -149,7 +148,7 @@ export function TopNav({ cartCount: propCartCount, cartHref: propCartHref }: Top
                 >
                   Catálogo
                 </Link>
-                {userType === "restaurante" && (
+                {userType === "comprador" && (
                   <Link
                     href="/pedidos"
                     className="relative rounded-lg px-3 py-2 transition hover:bg-white/10 hover:text-white whitespace-nowrap"
@@ -163,38 +162,52 @@ export function TopNav({ cartCount: propCartCount, cartHref: propCartHref }: Top
                   </Link>
                 )}
                 <Link
-                  href="/productores"
+                  href="/artesanos"
                   className="rounded-lg px-3 py-2 transition hover:bg-white/10 hover:text-white whitespace-nowrap"
                 >
-                  Productores
+                  Artesanos
                 </Link>
-                {userType === "agricultor" && (
+                {userType === "artesano" && (
                   <Link
-                    href="/agricultores"
+                    href="/artesanos/productos"
                     className="rounded-lg px-3 py-2 transition hover:bg-white/10 hover:text-white whitespace-nowrap"
                   >
                     Mis productos
+                  </Link>
+                )}
+                {user?.user_metadata?.is_admin && (
+                  <Link
+                    href="/admin"
+                    className="rounded-lg px-3 py-2 transition hover:bg-white/10 hover:text-white whitespace-nowrap bg-purple-500/20"
+                  >
+                    Admin
                   </Link>
                 )}
               </>
             ) : (
               <>
                 <Link
-                  href="/auth/login"
-                  className="rounded-lg px-3 py-2 transition hover:bg-white/10 hover:text-white whitespace-nowrap"
+                  href="/catalogo"
+                  className="text-sm font-medium text-slate-300 transition hover:text-white"
                 >
                   Catálogo
                 </Link>
                 <Link
-                  href="/auth/login"
-                  className="rounded-lg px-3 py-2 transition hover:bg-white/10 hover:text-white whitespace-nowrap"
+                  href="/artesanos"
+                  className="text-sm font-medium text-slate-300 transition hover:text-white"
                 >
-                  Productores
+                  Artesanos
+                </Link>
+                <Link
+                  href="/sobre-nosotros"
+                  className="text-sm font-medium text-slate-300 transition hover:text-white"
+                >
+                  Sobre Nosotros
                 </Link>
               </>
             )}
             <Link
-              href="/#contacto"
+              href="/contacto"
               className="rounded-lg px-3 py-2 transition hover:bg-white/10 hover:text-white whitespace-nowrap"
             >
               Contacto
@@ -218,9 +231,23 @@ export function TopNav({ cartCount: propCartCount, cartHref: propCartHref }: Top
                         Carrito (0)
                       </span>
                     )}
-                    {userType === "agricultor" ? (
+                    {userType === "artesano" ? (
                       <Link
-                        href="/agricultores/perfil"
+                        href="/artesanos/perfil"
+                        className="flex flex-col items-end gap-0.5 rounded-lg px-3 py-2 transition hover:bg-white/10"
+                      >
+                        <span className="text-sm font-semibold text-emerald-100 whitespace-nowrap">
+                          {user.user_metadata?.name || user.email}
+                        </span>
+                        {userTypeLabel && (
+                          <span className="text-xs text-emerald-300/80 whitespace-nowrap">
+                            {userTypeLabel}
+                          </span>
+                        )}
+                      </Link>
+                    ) : userType === "comprador" ? (
+                      <Link
+                        href="/compradores/perfil"
                         className="flex flex-col items-end gap-0.5 rounded-lg px-3 py-2 transition hover:bg-white/10"
                       >
                         <span className="text-sm font-semibold text-emerald-100 whitespace-nowrap">
@@ -287,9 +314,9 @@ export function TopNav({ cartCount: propCartCount, cartHref: propCartHref }: Top
         {/* Mobile Navbar */}
         <div className="flex md:hidden items-center justify-between text-white">
           <Link href="/" className="text-lg font-semibold tracking-[0.2em] whitespace-nowrap">
-            AgroLink
+            ArteCom
           </Link>
-          
+
           <div className="flex items-center gap-2">
             {!loading && hasCart && cartHref && (
               <Link
@@ -305,7 +332,7 @@ export function TopNav({ cartCount: propCartCount, cartHref: propCartHref }: Top
                 )}
               </Link>
             )}
-            
+
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="rounded-lg p-2 transition hover:bg-white/10"
@@ -344,7 +371,7 @@ export function TopNav({ cartCount: propCartCount, cartHref: propCartHref }: Top
                   >
                     Catálogo
                   </Link>
-                  {userType === "restaurante" && (
+                  {userType === "comprador" && (
                     <Link
                       href="/pedidos"
                       onClick={() => setMobileMenuOpen(false)}
@@ -359,49 +386,65 @@ export function TopNav({ cartCount: propCartCount, cartHref: propCartHref }: Top
                     </Link>
                   )}
                   <Link
-                    href="/productores"
+                    href="/artesanos"
                     onClick={() => setMobileMenuOpen(false)}
                     className="rounded-lg px-3 py-2 transition hover:bg-white/10 hover:text-white"
                   >
-                    Productores
+                    Artesanos
                   </Link>
-                  {userType === "agricultor" && (
+                  {userType === "artesano" && (
                     <Link
-                      href="/agricultores"
+                      href="/artesanos/productos"
                       onClick={() => setMobileMenuOpen(false)}
                       className="rounded-lg px-3 py-2 transition hover:bg-white/10 hover:text-white"
                     >
                       Mis productos
                     </Link>
                   )}
+                  {user?.user_metadata?.is_admin && (
+                    <Link
+                      href="/admin"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="rounded-lg px-3 py-2 transition hover:bg-white/10 hover:text-white bg-purple-500/20"
+                    >
+                      Panel Admin
+                    </Link>
+                  )}
                 </>
               ) : (
                 <>
                   <Link
-                    href="/auth/login"
+                    href="/catalogo"
                     onClick={() => setMobileMenuOpen(false)}
                     className="rounded-lg px-3 py-2 transition hover:bg-white/10 hover:text-white"
                   >
                     Catálogo
                   </Link>
                   <Link
-                    href="/auth/login"
+                    href="/artesanos"
                     onClick={() => setMobileMenuOpen(false)}
                     className="rounded-lg px-3 py-2 transition hover:bg-white/10 hover:text-white"
                   >
-                    Productores
+                    Artesanos
+                  </Link>
+                  <Link
+                    href="/sobre-nosotros"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="rounded-lg px-3 py-2 transition hover:bg-white/10 hover:text-white"
+                  >
+                    Sobre Nosotros
                   </Link>
                 </>
               )}
               <Link
-                href="/#contacto"
+                href="/contacto"
                 onClick={() => setMobileMenuOpen(false)}
                 className="rounded-lg px-3 py-2 transition hover:bg-white/10 hover:text-white"
               >
                 Contacto
               </Link>
             </div>
-            
+
             <div className="mt-4 pt-4 border-t border-white/10 flex flex-col gap-2">
               {!loading && (
                 <>
@@ -422,9 +465,18 @@ export function TopNav({ cartCount: propCartCount, cartHref: propCartHref }: Top
                           </div>
                         )}
                       </div>
-                      {userType === "agricultor" && (
+                      {userType === "artesano" && (
                         <Link
-                          href="/agricultores/perfil"
+                          href="/artesanos/perfil"
+                          onClick={() => setMobileMenuOpen(false)}
+                          className="rounded-lg px-3 py-2 text-sm transition hover:bg-white/10 text-emerald-100"
+                        >
+                          Mi perfil
+                        </Link>
+                      )}
+                      {userType === "comprador" && (
+                        <Link
+                          href="/compradores/perfil"
                           onClick={() => setMobileMenuOpen(false)}
                           className="rounded-lg px-3 py-2 text-sm transition hover:bg-white/10 text-emerald-100"
                         >

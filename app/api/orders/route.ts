@@ -1,19 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "../../lib/supabase";
+import { createClient } from "@supabase/supabase-js";
+import { supabase as supabaseAnon } from "../../lib/supabase";
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://ckggbmwcbaiyrwiapygv.supabase.co";
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNrZ2dibXdjYmFpeXJ3aWFweWd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQwMDgxNjYsImV4cCI6MjA3OTU4NDE2Nn0.k8tyINQe9LLo16zffY1_1gZhwB71EH0vB-wFVsp-xP0";
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+// Crear cliente con service role key si está disponible (bypass RLS)
+const supabase = supabaseServiceKey
+  ? createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    })
+  : supabaseAnon;
 
 async function sendEmail(to: string, subject: string, html: string, text: string) {
   const RESEND_API_KEY = process.env.RESEND_API_KEY;
   
-  console.log(`[EMAIL] Iniciando envío de email a: ${to}`);
-  console.log(`[EMAIL] RESEND_API_KEY configurado: ${RESEND_API_KEY ? "Sí" : "No"}`);
-  
   if (RESEND_API_KEY) {
     try {
-      console.log(`[EMAIL] Enviando email a través de Resend API...`);
-      
-      // Crear un AbortController para timeout
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 segundos de timeout
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
       
       try {
         const response = await fetch("https://api.resend.com/emails", {
@@ -23,7 +32,7 @@ async function sendEmail(to: string, subject: string, html: string, text: string
             "Authorization": `Bearer ${RESEND_API_KEY}`,
           },
           body: JSON.stringify({
-            from: "AgroLink <onboarding@resend.dev>",
+            from: "Marketplace Artesanal <onboarding@resend.dev>",
             to: [to],
             subject: subject,
             html: html,
@@ -37,69 +46,257 @@ async function sendEmail(to: string, subject: string, html: string, text: string
         
         if (!response.ok) {
           console.error(`[EMAIL] Error de Resend API (${response.status}):`, responseData);
-          throw new Error(responseData.message || `Error ${response.status}: Error al enviar email`);
+          return { id: "error", message: responseData.message || "Error al enviar email", error: true };
         }
 
-        console.log(`[EMAIL] Email enviado exitosamente. ID: ${responseData.id}`);
         return responseData;
       } catch (fetchError: any) {
         clearTimeout(timeoutId);
         if (fetchError.name === 'AbortError') {
-          console.error("[EMAIL] Timeout al enviar email: La solicitud tardó más de 10 segundos");
-          throw new Error("Timeout: La solicitud de envío de email tardó demasiado");
+          return { id: "error", message: "Timeout al enviar email", error: true };
         }
         throw fetchError;
       }
     } catch (error) {
       console.error("[EMAIL] Error al enviar email:", error);
-      if (error instanceof Error) {
-        console.error("[EMAIL] Mensaje de error:", error.message);
-        console.error("[EMAIL] Stack:", error.stack);
-      }
-      // No lanzar el error para que no falle la creación del pedido
-      // Solo loguear el error
-      return { 
-        id: "error", 
-        message: error instanceof Error ? error.message : "Error desconocido al enviar email",
-        error: true
-      };
+      return { id: "error", message: error instanceof Error ? error.message : "Error desconocido", error: true };
     }
   } else {
-    // Modo desarrollo - solo log
-    console.log("=== EMAIL (desarrollo - configure RESEND_API_KEY) ===");
+    console.log("=== EMAIL (desarrollo) ===");
     console.log("To:", to);
     console.log("Subject:", subject);
     console.log("Body:", text);
-    console.log("=====================================================");
     return { id: "dev-mode", message: "Email no enviado - RESEND_API_KEY no configurado" };
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const { data, error } = await supabase
+    console.log("[Orders API] ===== INICIO GET /api/orders =====");
+    const { searchParams } = new URL(request.url);
+    const buyerId = searchParams.get("buyer_id");
+    const artisanId = searchParams.get("artisan_id");
+    
+    console.log("[Orders API] Parámetros recibidos:", { buyerId, artisanId });
+
+    // Verificar si tenemos service role key para evitar recursión en RLS
+    const usingServiceKey = !!supabaseServiceKey;
+    console.log("[Orders API] Service Role Key disponible:", usingServiceKey);
+    console.log("[Orders API] Service Role Key (primeros 20 chars):", supabaseServiceKey ? supabaseServiceKey.substring(0, 20) + "..." : "NO CONFIGURADO");
+    
+    if (!usingServiceKey) {
+      console.warn("[Orders API] ⚠️ ADVERTENCIA: No se encontró SUPABASE_SERVICE_ROLE_KEY. Puede causar recursión en RLS si las políticas están mal configuradas.");
+    } else {
+      console.log("[Orders API] ✅ Usando Service Role Key - RLS debería estar deshabilitado");
+    }
+
+    // Si se busca por artesano, primero obtener los order_ids de los order_items de ese artesano
+    let orderIds: string[] | null = null;
+    
+    if (artisanId) {
+      console.log("[Orders API] Buscando order_items para artisanId:", artisanId);
+      console.log("[Orders API] Cliente Supabase usado:", usingServiceKey ? "SERVICE_ROLE" : "ANON");
+      
+      // Usar el mismo cliente (con service key si está disponible) para evitar recursión
+      const { data: orderItems, error: itemsError } = await supabase
+        .from("order_items")
+        .select("order_id")
+        .eq("artisan_id", artisanId);
+
+      console.log("[Orders API] Resultado consulta order_items:", {
+        tieneDatos: !!orderItems,
+        cantidadItems: orderItems?.length || 0,
+        tieneError: !!itemsError,
+        error: itemsError ? {
+          message: itemsError.message,
+          code: itemsError.code,
+          details: itemsError.details,
+          hint: itemsError.hint
+        } : null
+      });
+
+      if (itemsError) {
+        console.error("[Orders API] ❌ ERROR al obtener order_items:", {
+          message: itemsError.message,
+          code: itemsError.code,
+          details: itemsError.details,
+          hint: itemsError.hint,
+          usandoServiceKey: usingServiceKey
+        });
+        
+        // Si hay error y no estamos usando service key, puede ser recursión
+        if (!usingServiceKey && itemsError.message?.includes("recursion")) {
+          console.error("[Orders API] 🔴 Error de recursión detectado sin Service Role Key");
+          return NextResponse.json(
+            { error: "Error de recursión en políticas RLS. Por favor, configura SUPABASE_SERVICE_ROLE_KEY en .env.local" },
+            { status: 500 }
+          );
+        }
+        throw itemsError;
+      }
+      
+      // Obtener IDs únicos de pedidos
+      orderIds = [...new Set((orderItems || []).map((item: any) => item.order_id))];
+      console.log("[Orders API] Order IDs encontrados:", orderIds.length, orderIds);
+      
+      // Si no hay pedidos para este artesano, devolver array vacío
+      if (orderIds.length === 0) {
+        console.log("[Orders API] No hay pedidos para este artesano, retornando array vacío");
+        return NextResponse.json([], { status: 200 });
+      }
+    }
+
+    // Construir la consulta - evitar joins anidados que causan recursión en RLS
+    // Primero obtener los orders sin joins
+    console.log("[Orders API] Construyendo consulta de orders...");
+    let query = supabase
       .from("orders")
-      .select(`
-        *,
-        order_items (
-          *,
-          products (*)
-        ),
-        delivery_points (
-          id,
-          name,
-          address,
-          zone,
-          latitude,
-          longitude
-        )
-      `)
-      .order("created_at", { ascending: false });
+      .select("*");
 
-    if (error) throw error;
+    // Aplicar filtros de seguridad
+    if (buyerId) {
+      console.log("[Orders API] Filtrando por buyer_id:", buyerId);
+      query = query.eq("buyer_id", buyerId);
+    }
 
-    return NextResponse.json(data, { status: 200 });
+    // Si hay orderIds filtrados por artesano, filtrar por esos IDs
+    if (orderIds && orderIds.length > 0) {
+      console.log("[Orders API] Filtrando por orderIds:", orderIds.length, "IDs");
+      query = query.in("id", orderIds);
+    }
+
+    console.log("[Orders API] Ejecutando consulta de orders...");
+    console.log("[Orders API] Cliente usado para orders:", usingServiceKey ? "SERVICE_ROLE" : "ANON");
+    
+    const { data: orders, error } = await query.order("created_at", { ascending: false });
+
+    console.log("[Orders API] Resultado consulta orders:", {
+      tieneDatos: !!orders,
+      cantidadOrders: orders?.length || 0,
+      tieneError: !!error,
+      error: error ? {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      } : null
+    });
+
+    if (error) {
+      console.error("[Orders API] ❌ ERROR al obtener orders:", {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        usandoServiceKey: usingServiceKey
+      });
+      throw error;
+    }
+
+    // Filtrar resultados para asegurar que solo se devuelven pedidos autorizados
+    let filteredOrders = orders || [];
+    
+    if (buyerId) {
+      filteredOrders = filteredOrders.filter((order: any) => order.buyer_id === buyerId);
+    }
+
+    // Obtener order_items y productos por separado para evitar recursión
+    if (filteredOrders.length > 0) {
+      const orderIdsList = filteredOrders.map((o: any) => o.id);
+      console.log("[Orders API] Obteniendo order_items para", orderIdsList.length, "orders");
+      
+      // Obtener order_items
+      console.log("[Orders API] Ejecutando consulta de order_items...");
+      console.log("[Orders API] Cliente usado para order_items:", usingServiceKey ? "SERVICE_ROLE" : "ANON");
+      
+      const { data: orderItems, error: itemsError } = await supabase
+        .from("order_items")
+        .select("*")
+        .in("order_id", orderIdsList);
+
+      console.log("[Orders API] Resultado consulta order_items (segunda vez):", {
+        tieneDatos: !!orderItems,
+        cantidadItems: orderItems?.length || 0,
+        tieneError: !!itemsError,
+        error: itemsError ? {
+          message: itemsError.message,
+          code: itemsError.code,
+          details: itemsError.details,
+          hint: itemsError.hint
+        } : null
+      });
+
+      if (itemsError) {
+        console.error("[Orders API] ❌ ERROR al obtener order_items (segunda vez):", {
+          message: itemsError.message,
+          code: itemsError.code,
+          details: itemsError.details,
+          hint: itemsError.hint,
+          usandoServiceKey: usingServiceKey
+        });
+        throw itemsError;
+      }
+
+      // Filtrar order_items por artesano si se busca por artesano
+      let filteredItems = orderItems || [];
+      if (artisanId) {
+        filteredItems = filteredItems.filter((item: any) => item.artisan_id === artisanId);
+      }
+
+      // Obtener productos para los order_items
+      const productIds = [...new Set(filteredItems.map((item: any) => item.product_id))];
+      const { data: products, error: productsError } = await supabase
+        .from("products")
+        .select("id, name, category, images")
+        .in("id", productIds);
+
+      if (productsError) throw productsError;
+
+      // Crear mapa de productos para acceso rápido
+      const productsMap = new Map((products || []).map((p: any) => [p.id, p]));
+
+      // Agrupar order_items por order_id y agregar información de productos
+      const itemsByOrder = new Map<string, any[]>();
+      filteredItems.forEach((item: any) => {
+        const product = productsMap.get(item.product_id);
+        if (!itemsByOrder.has(item.order_id)) {
+          itemsByOrder.set(item.order_id, []);
+        }
+        itemsByOrder.get(item.order_id)!.push({
+          ...item,
+          products: product || null
+        });
+      });
+
+      // Combinar orders con sus order_items
+      const ordersWithItems = filteredOrders
+        .map((order: any) => ({
+          ...order,
+          order_items: itemsByOrder.get(order.id) || []
+        }))
+        .filter((order: any) => {
+          // Si se busca por artesano, solo mostrar orders que tengan items de ese artesano
+          if (artisanId) {
+            return order.order_items.length > 0;
+          }
+          return true;
+        });
+
+      console.log("[Orders API] ✅ Retornando", ordersWithItems.length, "orders con items");
+      console.log("[Orders API] ===== FIN GET /api/orders (éxito) =====");
+      return NextResponse.json(ordersWithItems, { status: 200 });
+    }
+
+    console.log("[Orders API] No hay orders filtrados, retornando array vacío");
+    console.log("[Orders API] ===== FIN GET /api/orders (sin datos) =====");
+    return NextResponse.json([], { status: 200 });
   } catch (error: any) {
+    console.error("[Orders API] 🔴 ERROR GENERAL en GET /api/orders:", {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
+    console.log("[Orders API] ===== FIN GET /api/orders (error) =====");
     return NextResponse.json(
       { error: error.message || "Error al obtener pedidos" },
       { status: 500 }
@@ -111,18 +308,29 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const {
-      user_id,
-      customer_name,
-      customer_email,
-      customer_phone,
-      delivery_slot,
-      logistics_option,
-      delivery_point_id,
-      notes,
+      buyer_id,
+      shipping_address,
+      shipping_city,
+      shipping_region,
+      shipping_phone,
       items, // Array de { product_id, quantity }
     } = body;
 
-    // Validar que haya items
+    // Validaciones
+    if (!buyer_id) {
+      return NextResponse.json(
+        { error: "buyer_id es requerido" },
+        { status: 400 }
+      );
+    }
+
+    if (!shipping_address || !shipping_city || !shipping_region || !shipping_phone) {
+      return NextResponse.json(
+        { error: "shipping_address, shipping_city, shipping_region y shipping_phone son requeridos" },
+        { status: 400 }
+      );
+    }
+
     if (!items || items.length === 0) {
       return NextResponse.json(
         { error: "El pedido debe contener al menos un producto" },
@@ -134,12 +342,11 @@ export async function POST(request: NextRequest) {
     const productIds = items.map((item: any) => item.product_id);
     const { data: products, error: productsError } = await supabase
       .from("products")
-      .select("id, name, stock, user_id")
+      .select("id, name, price, stock, user_id")
       .in("id", productIds);
 
     if (productsError) throw productsError;
 
-    // Validar que todos los productos existan
     if (!products || products.length !== productIds.length) {
       return NextResponse.json(
         { error: "Uno o más productos no fueron encontrados" },
@@ -147,7 +354,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validar stock suficiente
+    // Validar stock suficiente y calcular totales
+    let totalAmount = 0;
+    const orderItemsData: any[] = [];
+
     for (const item of items) {
       const product = products.find((p: any) => p.id === item.product_id);
       if (!product) {
@@ -156,34 +366,46 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
-      if (product.stock < item.quantity) {
+
+      // Asegurar que stock y quantity sean números
+      const availableStock = Number(product.stock) || 0;
+      const requestedQuantity = Number(item.quantity) || 0;
+
+      if (availableStock < requestedQuantity) {
         return NextResponse.json(
-          { error: `Stock insuficiente para ${product.name}. Disponible: ${product.stock}, Solicitado: ${item.quantity}` },
+          { error: `Stock insuficiente para ${product.name}. Disponible: ${availableStock}, Solicitado: ${requestedQuantity}` },
           { status: 400 }
         );
       }
-    }
 
-    // 2. Disminuir stock de productos y actualizar disponibilidad
-    // Función para calcular disponibilidad basada en stock
-    function calculateAvailability(stock: number): "Alta" | "Media" | "Baja" {
-      if (stock > 100) {
-        return "Alta";
-      } else if (stock >= 40) {
-        return "Media";
-      } else {
-        return "Baja";
+      if (availableStock === 0) {
+        return NextResponse.json(
+          { error: `El producto ${product.name} está agotado` },
+          { status: 400 }
+        );
       }
+
+      const priceAtPurchase = parseFloat(product.price);
+      const subtotal = priceAtPurchase * item.quantity;
+      totalAmount += subtotal;
+
+      orderItemsData.push({
+        product_id: product.id,
+        artisan_id: product.user_id,
+        quantity: item.quantity,
+        price_at_purchase: priceAtPurchase,
+        subtotal: subtotal,
+      });
     }
 
+    // 2. Disminuir stock de productos
     for (const item of items) {
       const product = products.find((p: any) => p.id === item.product_id);
       if (product) {
         const newStock = product.stock - item.quantity;
-        const newAvailability = calculateAvailability(newStock);
         const { error: updateStockError } = await supabase
           .from("products")
-          .update({ stock: newStock, availability: newAvailability })
+          .update({ stock: newStock })
           .eq("id", item.product_id);
 
         if (updateStockError) {
@@ -194,36 +416,33 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. Crear el pedido
-    const orderData: any = {
-      user_id: user_id || null,
-      customer_name: customer_name || null,
-      customer_email: customer_email || null,
-      customer_phone: customer_phone || null,
-      delivery_slot,
-      logistics_option,
-      notes: notes || null,
-      total_items: items.reduce((sum: number, item: any) => sum + item.quantity, 0),
-      status: "pendiente",
-    };
-
-    // Agregar delivery_point_id si se proporciona
-    if (delivery_point_id) {
-      orderData.delivery_point_id = delivery_point_id;
-    }
-
     const { data: order, error: orderError } = await supabase
       .from("orders")
-      .insert([orderData])
+      .insert([
+        {
+          buyer_id,
+          total_amount: totalAmount,
+          shipping_address,
+          shipping_city,
+          shipping_region,
+          shipping_phone,
+          payment_status: "pendiente",
+          order_status: "procesando",
+        },
+      ])
       .select()
       .single();
 
     if (orderError) throw orderError;
 
     // 4. Crear los items del pedido
-    const orderItems = items.map((item: any) => ({
+    const orderItems = orderItemsData.map((item) => ({
       order_id: order.id,
       product_id: item.product_id,
+      artisan_id: item.artisan_id,
       quantity: item.quantity,
+      price_at_purchase: item.price_at_purchase,
+      subtotal: item.subtotal,
     }));
 
     const { error: itemsError } = await supabase
@@ -232,7 +451,7 @@ export async function POST(request: NextRequest) {
 
     if (itemsError) throw itemsError;
 
-    // 5. Obtener el pedido completo con items y productos
+    // 5. Obtener el pedido completo
     const { data: fullOrder, error: fetchError } = await supabase
       .from("orders")
       .select(`
@@ -247,120 +466,93 @@ export async function POST(request: NextRequest) {
 
     if (fetchError) throw fetchError;
 
-    // 6. Obtener emails de agricultores y enviar notificaciones
-    const farmerIds = [...new Set(products.map((p: any) => p.user_id).filter((id: any) => id))];
+    // 6. Enviar notificaciones a artesanos
+    const artisanIds = [...new Set(orderItemsData.map((item) => item.artisan_id).filter((id: any) => id))];
     
-    if (farmerIds.length > 0) {
-      // Agrupar productos por agricultor
-      const productsByFarmer: Record<string, any[]> = {};
-      for (const item of items) {
+    if (artisanIds.length > 0) {
+      const productsByArtisan: Record<string, any[]> = {};
+      for (const item of orderItemsData) {
         const product = products.find((p: any) => p.id === item.product_id);
-        if (product && product.user_id) {
-          if (!productsByFarmer[product.user_id]) {
-            productsByFarmer[product.user_id] = [];
+        if (product && item.artisan_id) {
+          if (!productsByArtisan[item.artisan_id]) {
+            productsByArtisan[item.artisan_id] = [];
           }
-          productsByFarmer[product.user_id].push({
+          productsByArtisan[item.artisan_id].push({
             name: product.name,
             quantity: item.quantity,
+            subtotal: item.subtotal,
           });
         }
       }
 
-      // Obtener emails de agricultores usando función SQL
-      for (const farmerId of farmerIds) {
+      for (const artisanId of artisanIds) {
         try {
-          // Usar función SQL para obtener el email del usuario
-          const { data: farmerEmail, error: farmerError } = await supabase.rpc('get_user_email', {
-            user_id_param: farmerId
+          const { data: artisanEmail, error: artisanError } = await supabase.rpc('get_user_email', {
+            user_id_param: artisanId
           });
 
-          if (!farmerError && farmerEmail) {
-            const farmerProducts = productsByFarmer[farmerId] || [];
+          if (!artisanError && artisanEmail) {
+            const artisanProducts = productsByArtisan[artisanId] || [];
+            const artisanTotal = artisanProducts.reduce((sum, p) => sum + p.subtotal, 0);
             
-            const orderItemsText = farmerProducts
-              .map((p: any) => `- ${p.name} (${p.quantity} unidades)`)
+            const orderItemsText = artisanProducts
+              .map((p: any) => `- ${p.name} (${p.quantity} unidades) - $${p.subtotal.toLocaleString('es-CL')}`)
               .join("\n");
 
             const emailHtml = `
               <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <h2 style="color: #059669;">Nuevo Pedido Recibido</h2>
-                <p>Estimado/a agricultor,</p>
-                <p>Has recibido un nuevo pedido <strong>#${order.id.substring(0, 8)}</strong> en AgroLink.</p>
+                <p>Estimado/a artesano,</p>
+                <p>Has recibido un nuevo pedido <strong>#${order.id.substring(0, 8)}</strong>.</p>
                 
                 <div style="background-color: #f0fdf4; border-left: 4px solid #059669; padding: 16px; margin: 20px 0;">
                   <h3 style="margin: 0 0 12px 0; color: #059669;">Detalles del pedido:</h3>
                   <ul style="margin: 0; padding-left: 20px;">
                     <li><strong>Fecha:</strong> ${new Date(order.created_at).toLocaleDateString("es-ES")}</li>
-                    <li><strong>Cliente:</strong> ${customer_name || "No especificado"}</li>
-                    <li><strong>Email:</strong> ${customer_email || "No especificado"}</li>
-                    <li><strong>Teléfono:</strong> ${customer_phone || "No especificado"}</li>
-                    <li><strong>Horario de entrega:</strong> ${delivery_slot}</li>
-                    <li><strong>Opción logística:</strong> ${logistics_option}</li>
-                    ${notes ? `<li><strong>Notas:</strong> ${notes}</li>` : ""}
+                    <li><strong>Dirección de envío:</strong> ${shipping_address}, ${shipping_city}, ${shipping_region}</li>
+                    <li><strong>Teléfono:</strong> ${shipping_phone}</li>
                   </ul>
                 </div>
 
                 <h3 style="color: #059669; margin-top: 24px;">Tus productos en este pedido:</h3>
                 <pre style="background-color: #f3f4f6; padding: 12px; border-radius: 4px; white-space: pre-wrap;">${orderItemsText}</pre>
+                <p style="margin-top: 12px;"><strong>Total de tus productos: $${artisanTotal.toLocaleString('es-CL')}</strong></p>
 
-                <p style="margin-top: 24px;">Por favor, revisa el pedido en tu panel de agricultores y confirma la disponibilidad.</p>
-                
-                <p style="margin-top: 24px; color: #6b7280; font-size: 14px;">
-                  Saludos,<br>
-                  Equipo AgroLink
-                </p>
+                <p style="margin-top: 24px;">Por favor, revisa el pedido en tu panel de artesanos y prepara los productos.</p>
               </div>
             `;
 
             const emailText = `
 Nuevo Pedido Recibido
 
-Estimado/a agricultor,
+Estimado/a artesano,
 
-Has recibido un nuevo pedido #${order.id.substring(0, 8)} en AgroLink.
+Has recibido un nuevo pedido #${order.id.substring(0, 8)}.
 
 Detalles del pedido:
 - Fecha: ${new Date(order.created_at).toLocaleDateString("es-ES")}
-- Cliente: ${customer_name || "No especificado"}
-- Email: ${customer_email || "No especificado"}
-- Teléfono: ${customer_phone || "No especificado"}
-- Horario de entrega: ${delivery_slot}
-- Opción logística: ${logistics_option}
-${notes ? `- Notas: ${notes}` : ""}
+- Dirección de envío: ${shipping_address}, ${shipping_city}, ${shipping_region}
+- Teléfono: ${shipping_phone}
 
 Tus productos en este pedido:
 ${orderItemsText}
 
-Por favor, revisa el pedido en tu panel de agricultores y confirma la disponibilidad.
+Total de tus productos: $${artisanTotal.toLocaleString('es-CL')}
 
-Saludos,
-Equipo AgroLink
+Por favor, revisa el pedido en tu panel de artesanos y prepara los productos.
             `;
 
-            // Enviar email de forma asíncrona (no bloquear la creación del pedido)
             sendEmail(
-              farmerEmail,
-              `Nuevo pedido #${order.id.substring(0, 8)} - AgroLink`,
+              artisanEmail,
+              `Nuevo pedido #${order.id.substring(0, 8)}`,
               emailHtml,
               emailText
-            )
-            .then((result) => {
-              if (result && result.error) {
-                console.error(`[EMAIL] Error al enviar email a agricultor ${farmerEmail}:`, result.message);
-              } else {
-                console.log(`[EMAIL] Email enviado exitosamente a agricultor ${farmerEmail}:`, result);
-              }
-            })
-            .catch((err) => {
-              console.error(`[EMAIL] Error inesperado al enviar email a agricultor ${farmerEmail}:`, err);
-              // No fallar la creación del pedido si falla el email
+            ).catch((err) => {
+              console.error(`[EMAIL] Error al enviar email a artesano ${artisanEmail}:`, err);
             });
-          } else {
-            console.warn(`[EMAIL] No se pudo obtener el email del agricultor ${farmerId}`);
           }
         } catch (error) {
-          console.error(`[EMAIL] Error al obtener datos del agricultor ${farmerId}:`, error);
-          // Continuar con otros agricultores aunque falle uno
+          console.error(`[EMAIL] Error al obtener datos del artesano ${artisanId}:`, error);
         }
       }
     }
@@ -377,40 +569,95 @@ Equipo AgroLink
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, status, cancellation_reason } = body;
+    const { 
+      id, 
+      buyer_id,
+      order_status, 
+      payment_status,
+      tracking_number,
+      cancellation_reason 
+    } = body;
 
-    if (!id || !status) {
+    if (!id) {
       return NextResponse.json(
-        { error: "ID y status son requeridos" },
+        { error: "ID es requerido" },
+        { status: 400 }
+      );
+    }
+
+    // Validar estados
+    const validOrderStatuses = ["procesando", "enviado", "entregado", "cancelado"];
+    const validPaymentStatuses = ["pendiente", "pagado", "reembolsado"];
+
+    if (order_status && !validOrderStatuses.includes(order_status)) {
+      return NextResponse.json(
+        { error: `order_status debe ser uno de: ${validOrderStatuses.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
+    if (payment_status && !validPaymentStatuses.includes(payment_status)) {
+      return NextResponse.json(
+        { error: `payment_status debe ser uno de: ${validPaymentStatuses.join(", ")}` },
         { status: 400 }
       );
     }
 
     // Si se está cancelando, el motivo es requerido
-    if (status === "cancelado" && !cancellation_reason) {
+    if (order_status === "cancelado" && !cancellation_reason) {
       return NextResponse.json(
         { error: "El motivo de cancelación es requerido" },
         { status: 400 }
       );
     }
 
-    // Obtener el estado actual del pedido antes de actualizarlo
-    const { data: currentOrder, error: currentOrderError } = await supabase
-      .from("orders")
-      .select("status")
-      .eq("id", id)
-      .single();
+    // Verificar permisos
+    if (buyer_id) {
+      const { data: existingOrder, error: checkError } = await supabase
+        .from("orders")
+        .select("buyer_id, order_status")
+        .eq("id", id)
+        .single();
 
-    if (currentOrderError) throw currentOrderError;
+      if (checkError) throw checkError;
 
-    const previousStatus = currentOrder?.status;
-    const isNewlyCancelled = status === "cancelado" && previousStatus !== "cancelado";
+      if (existingOrder?.buyer_id !== buyer_id) {
+        return NextResponse.json(
+          { error: "No tienes permiso para modificar este pedido" },
+          { status: 403 }
+        );
+      }
 
-    const updateData: any = { status };
-    if (status === "cancelado" && cancellation_reason) {
+      // Los compradores solo pueden cancelar pedidos en procesamiento
+      if (order_status === "cancelado" && existingOrder?.order_status !== "procesando") {
+        return NextResponse.json(
+          { error: "Solo se pueden cancelar pedidos en procesamiento" },
+          { status: 400 }
+        );
+      }
+    }
+
+    let previousStatus: string | undefined = undefined;
+    if (order_status !== undefined) {
+      // Si estamos actualizando el estado, necesitamos obtener el estado anterior
+      const { data: currentOrder } = await supabase
+        .from("orders")
+        .select("order_status")
+        .eq("id", id)
+        .single();
+      previousStatus = currentOrder?.order_status;
+    }
+
+    const isNewlyCancelled = order_status === "cancelado" && previousStatus !== "cancelado";
+
+    const updateData: any = {};
+    if (order_status !== undefined) updateData.order_status = order_status;
+    if (payment_status !== undefined) updateData.payment_status = payment_status;
+    if (tracking_number !== undefined) updateData.tracking_number = tracking_number;
+    
+    if (order_status === "cancelado" && cancellation_reason) {
       updateData.cancellation_reason = cancellation_reason;
-    } else if (status !== "cancelado") {
-      // Si no se está cancelando, limpiar el motivo de cancelación
+    } else if (order_status !== "cancelado" && order_status !== undefined) {
       updateData.cancellation_reason = null;
     }
 
@@ -429,145 +676,29 @@ export async function PUT(request: NextRequest) {
 
     if (error) throw error;
 
-    // Si se canceló el pedido (y no estaba cancelado antes), restaurar el stock de los productos
+    // Si se canceló el pedido, restaurar el stock
     if (isNewlyCancelled && data.order_items && data.order_items.length > 0) {
-      console.log(`[STOCK] Restaurando stock para pedido cancelado ${id}`);
-      
-      // Función para calcular disponibilidad basada en stock
-      function calculateAvailability(stock: number): "Alta" | "Media" | "Baja" {
-        if (stock > 100) {
-          return "Alta";
-        } else if (stock >= 40) {
-          return "Media";
-        } else {
-          return "Baja";
-        }
-      }
-
-      // Restaurar stock de cada producto
       for (const item of data.order_items) {
         if (item.product_id && item.quantity) {
           try {
-            // Obtener el stock actual del producto
-            const { data: productData, error: productError } = await supabase
+            const { data: productData } = await supabase
               .from("products")
               .select("stock")
               .eq("id", item.product_id)
               .single();
 
-            if (productError) {
-              console.error(`[STOCK] Error al obtener stock del producto ${item.product_id}:`, productError);
-              continue;
-            }
-
             const currentStock = productData?.stock || 0;
             const newStock = currentStock + item.quantity;
-            const newAvailability = calculateAvailability(newStock);
 
-            // Actualizar stock y disponibilidad
-            const { error: updateError } = await supabase
+            await supabase
               .from("products")
-              .update({ 
-                stock: newStock,
-                availability: newAvailability
-              })
+              .update({ stock: newStock })
               .eq("id", item.product_id);
-
-            if (updateError) {
-              console.error(`[STOCK] Error al restaurar stock del producto ${item.product_id}:`, updateError);
-            } else {
-              console.log(`[STOCK] Stock restaurado para producto ${item.product_id}: ${currentStock} -> ${newStock} unidades`);
-            }
           } catch (error) {
-            console.error(`[STOCK] Error al procesar restauración de stock para producto ${item.product_id}:`, error);
+            console.error(`[STOCK] Error al restaurar stock para producto ${item.product_id}:`, error);
           }
         }
       }
-    }
-
-    // Si se canceló el pedido, enviar email de notificación al cliente
-    if (status === "cancelado" && data.customer_email) {
-      try {
-        console.log(`[EMAIL] Intentando enviar email de cancelación a: ${data.customer_email}`);
-        console.log(`[EMAIL] Pedido ID: ${data.id}`);
-        
-        const orderItemsText = data.order_items
-          ?.map((item: any) => `- ${item.products?.name || "Producto"} (${item.quantity} unidades)`)
-          .join("\n") || "No hay productos";
-
-        const emailHtml = `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #059669;">Notificación de Cancelación de Pedido</h2>
-            <p>Estimado/a ${data.customer_name || "Cliente"},</p>
-            <p>Lamentamos informarle que su pedido <strong>#${data.id.substring(0, 8)}</strong> ha sido cancelado.</p>
-            
-            <div style="background-color: #fef2f2; border-left: 4px solid #dc2626; padding: 16px; margin: 20px 0;">
-              <p style="margin: 0; font-weight: bold; color: #991b1b;">Motivo de cancelación:</p>
-              <p style="margin: 8px 0 0 0; color: #7f1d1d;">${cancellation_reason}</p>
-            </div>
-
-            <h3 style="color: #059669; margin-top: 24px;">Detalles del pedido:</h3>
-            <ul>
-              <li><strong>Fecha:</strong> ${new Date(data.created_at).toLocaleDateString("es-ES")}</li>
-              <li><strong>Productos:</strong></li>
-              <pre style="background-color: #f3f4f6; padding: 12px; border-radius: 4px;">${orderItemsText}</pre>
-            </ul>
-
-            <p style="margin-top: 24px;">Si tiene alguna pregunta o necesita más información, no dude en contactarnos.</p>
-            
-            <p style="margin-top: 24px; color: #6b7280; font-size: 14px;">
-              Saludos,<br>
-              Equipo AgroLink
-            </p>
-          </div>
-        `;
-
-        const emailText = `
-Notificación de Cancelación de Pedido
-
-Estimado/a ${data.customer_name || "Cliente"},
-
-Lamentamos informarle que su pedido #${data.id.substring(0, 8)} ha sido cancelado.
-
-Motivo de cancelación:
-${cancellation_reason}
-
-Detalles del pedido:
-- Fecha: ${new Date(data.created_at).toLocaleDateString("es-ES")}
-- Productos:
-${orderItemsText}
-
-Si tiene alguna pregunta o necesita más información, no dude en contactarnos.
-
-Saludos,
-Equipo AgroLink
-        `;
-
-        // Enviar email de forma asíncrona (no esperar respuesta)
-        sendEmail(
-          data.customer_email,
-          `Pedido #${data.id.substring(0, 8)} cancelado - AgroLink`,
-          emailHtml,
-          emailText
-        )
-        .then((result) => {
-          if (result && result.error) {
-            console.error(`[EMAIL] Error al enviar email de cancelación a ${data.customer_email}:`, result.message);
-          } else {
-            console.log(`[EMAIL] Email enviado exitosamente a ${data.customer_email}:`, result);
-          }
-        })
-        .catch((err) => {
-          console.error(`[EMAIL] Error inesperado al enviar email de cancelación a ${data.customer_email}:`, err);
-          // No fallar la actualización del pedido si falla el email
-        });
-      } catch (emailError) {
-        console.error("[EMAIL] Error al preparar email de cancelación:", emailError);
-        console.error("[EMAIL] Stack trace:", emailError instanceof Error ? emailError.stack : "N/A");
-        // No fallar la actualización del pedido si falla el email
-      }
-    } else if (status === "cancelado" && !data.customer_email) {
-      console.warn(`[EMAIL] No se puede enviar email de cancelación: el pedido ${data.id} no tiene customer_email`);
     }
 
     return NextResponse.json(data, { status: 200 });
@@ -583,19 +714,18 @@ export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const orderId = searchParams.get("id");
-    const userId = searchParams.get("user_id");
+    const buyerId = searchParams.get("buyer_id");
 
-    if (!orderId || !userId) {
+    if (!orderId || !buyerId) {
       return NextResponse.json(
-        { error: "ID del pedido y user_id son requeridos" },
+        { error: "ID del pedido y buyer_id son requeridos" },
         { status: 400 }
       );
     }
 
-    // Verificar que el pedido pertenece al usuario y está cancelado
     const { data: order, error: fetchError } = await supabase
       .from("orders")
-      .select("id, status, user_id")
+      .select("id, order_status, buyer_id")
       .eq("id", orderId)
       .single();
 
@@ -608,21 +738,21 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    if (order.user_id !== userId) {
+    if (order.buyer_id !== buyerId) {
       return NextResponse.json(
         { error: "No tienes permiso para eliminar este pedido" },
         { status: 403 }
       );
     }
 
-    if (order.status !== "cancelado") {
+    if (order.order_status !== "cancelado") {
       return NextResponse.json(
         { error: "Solo se pueden eliminar pedidos cancelados" },
         { status: 400 }
       );
     }
 
-    // Eliminar primero los order_items (cascada)
+    // Eliminar order_items (cascada)
     const { error: itemsError } = await supabase
       .from("order_items")
       .delete()
@@ -649,4 +779,3 @@ export async function DELETE(request: NextRequest) {
     );
   }
 }
-

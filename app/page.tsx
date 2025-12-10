@@ -1,304 +1,190 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { TopNav } from "./components/top-nav";
-import { useAuth } from "./components/auth-provider";
 import Footer from "./components/footer";
+import { ArrowRight, ShoppingBag, Star, Tag } from "lucide-react";
 
-const beneficios = [
-  {
-    title: "Para Agricultores",
-    items: [
-      "Publica tus productos y gestiona tu inventario fácilmente",
-      "Conecta directamente con restaurantes y cocinas locales",
-      "Recibe pedidos organizados y planifica tus cosechas",
-      "Aumenta tus ventas y reduce intermediarios",
-    ],
-  },
-  {
-    title: "Para Restaurantes",
-    items: [
-      "Accede a productos frescos y locales de la Región de Los Lagos",
-      "Catálogo completo con precios transparentes",
-      "Realiza pedidos multiproveedor en un solo lugar",
-      "Gestiona tus compras y revisa tu historial de pedidos",
-    ],
-  },
-];
-
-const caracteristicas = [
-  {
-    icon: "🌱",
-    title: "Productos Locales",
-    description: "Conectamos agricultores de Osorno y Río Bueno con restaurantes que valoran lo local y fresco.",
-  },
-  {
-    icon: "💰",
-    title: "Precios Transparentes",
-    description: "Todos los precios son claros desde el inicio, sin sorpresas ni negociaciones complicadas.",
-  },
-  {
-    icon: "🚚",
-    title: "Logística Optimizada",
-    description: "Rutas agrupadas y opciones de entrega flexibles para reducir costos y tiempos.",
-  },
-  {
-    icon: "📱",
-    title: "Fácil de Usar",
-    description: "Plataforma intuitiva diseñada para que cualquier persona pueda usarla sin complicaciones.",
-  },
-];
+type Product = {
+  id: string;
+  name: string;
+  price: number;
+  category: string;
+  images: string[];
+  artisan_name?: string;
+};
 
 export default function Home() {
-  const { user } = useAuth();
+  const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchProducts() {
+      try {
+        const res = await fetch("/api/products?sort_by=recent&limit=12");
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setFeaturedProducts(data.slice(0, 12));
+        }
+      } catch (error) {
+        console.error("Error fetching products:", error);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchProducts();
+  }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-900 via-slate-950 to-black text-white">
+    <div className="min-h-screen bg-slate-50 text-slate-900">
       <TopNav />
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-12 px-4 pb-24 pt-12 sm:px-8 lg:px-12">
-        <header className="flex flex-col gap-8 rounded-3xl bg-white/5 px-6 py-10 backdrop-blur-md sm:px-10 lg:flex-row lg:items-center lg:gap-16">
-          <div className="flex-1 space-y-6">
-            <p className="inline-flex items-center gap-2 rounded-full border border-white/30 px-4 py-2 text-xs uppercase tracking-[0.2em] text-emerald-200">
-              AgroLink · Marketplace Agrícola
-            </p>
-            <h1 className="text-4xl font-semibold leading-tight text-white sm:text-5xl">
-              Conectamos agricultores locales con restaurantes que valoran lo fresco y sostenible
+
+      {/* Hero Section - Carousel */}
+      <section className="relative h-[500px] w-full overflow-hidden bg-slate-900">
+        <div className="absolute inset-0 opacity-40">
+          {/* Placeholder for hero image if we had one, using gradient for now */}
+          <div className="h-full w-full bg-gradient-to-r from-blue-900 to-emerald-900" />
+        </div>
+        <div className="relative mx-auto flex h-full max-w-7xl flex-col justify-center px-4 sm:px-6 lg:px-8">
+          <div className="max-w-2xl">
+            <h1 className="mb-4 text-4xl font-bold tracking-tight text-white sm:text-5xl lg:text-6xl">
+              Artesanía Chilena <br />
+              <span className="text-emerald-400">Única y Auténtica</span>
             </h1>
-            <p className="text-lg text-emerald-100 sm:text-xl">
-              AgroLink es una plataforma digital que facilita la conexión entre productores agrícolas de la Región de Los Lagos 
-              (Osorno y Río Bueno) y restaurantes, cocinas profesionales y negocios gastronómicos. 
-              Nuestro objetivo es fortalecer la economía local, reducir intermediarios y promover el consumo de productos frescos y de calidad.
+            <p className="mb-8 text-xl text-slate-200">
+              Descubre productos hechos a mano por talentosos artesanos locales.
+              Apoya el comercio justo y lleva a casa un pedazo de nuestra cultura.
             </p>
-            {!user && (
-              <div className="flex flex-col gap-4 sm:flex-row">
-                <Link
-                  href="/auth/registro"
-                  className="rounded-full bg-white px-6 py-3 text-center text-base font-semibold text-emerald-900 transition hover:bg-emerald-100"
-                >
-                  Crear cuenta
-                </Link>
-                <Link
-                  href="/auth/login"
-                  className="rounded-full border border-white/40 px-6 py-3 text-center text-base font-semibold text-white transition hover:bg-white/10"
-                >
-                  Iniciar sesión
-                </Link>
-              </div>
-            )}
-            {user && (
-              <div className="flex flex-col gap-4 sm:flex-row">
-                <Link
-                  href="/catalogo"
-                  className="rounded-full bg-white px-6 py-3 text-center text-base font-semibold text-emerald-900 transition hover:bg-emerald-100"
-                >
-                  Ver catálogo
-                </Link>
-                {user.user_metadata?.user_type === "restaurante" && (
-                  <Link
-                    href="/catalogo"
-                    className="rounded-full border border-white/40 px-6 py-3 text-center text-base font-semibold text-white transition hover:bg-white/10"
-                  >
-                    Ver catálogo
-                  </Link>
-                )}
-                {user.user_metadata?.user_type === "agricultor" && (
-                  <Link
-                    href="/agricultores"
-                    className="rounded-full border border-white/40 px-6 py-3 text-center text-base font-semibold text-white transition hover:bg-white/10"
-                  >
-                    Gestionar productos
-                  </Link>
-                )}
-              </div>
-            )}
-          </div>
-        </header>
-
-        <section className="rounded-3xl border border-white/10 bg-white/5 px-6 py-10 sm:px-10">
-          <div className="mb-8 text-center">
-            <h2 className="text-3xl font-semibold text-white">¿Qué es AgroLink?</h2>
-            <p className="mt-4 text-lg text-emerald-100">
-              Una plataforma digital que simplifica la compra y venta de productos agrícolas locales
-            </p>
-          </div>
-          
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-            {caracteristicas.map((feature) => (
-              <div
-                key={feature.title}
-                className="rounded-2xl border border-white/10 bg-black/30 p-6 text-center"
+            <div className="flex gap-4">
+              <Link
+                href="/catalogo"
+                className="inline-flex items-center rounded-full bg-emerald-500 px-8 py-3 text-base font-semibold text-white transition hover:bg-emerald-600"
               >
-                <div className="mb-4 text-4xl">{feature.icon}</div>
-                <h3 className="mb-2 text-xl font-semibold text-white">
-                  {feature.title}
-                </h3>
-                <p className="text-sm text-emerald-100">
-                  {feature.description}
-                </p>
-              </div>
-            ))}
+                Ver Catálogo
+                <ArrowRight className="ml-2 h-5 w-5" />
+              </Link>
+              <Link
+                href="/sobre-nosotros"
+                className="inline-flex items-center rounded-full border border-white/30 bg-white/10 px-8 py-3 text-base font-semibold text-white backdrop-blur-sm transition hover:bg-white/20"
+              >
+                Conócenos
+              </Link>
+            </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <section className="grid gap-6 rounded-3xl border border-white/10 bg-slate-900/40 px-6 py-10 sm:px-10 lg:grid-cols-2">
-          {beneficios.map((beneficio) => (
-            <article
-              key={beneficio.title}
-              className="flex flex-col gap-4 rounded-2xl bg-white p-6 shadow-xl"
+      {/* Categories Grid */}
+      <section className="px-6 py-16">
+        <h2 className="mb-8 text-2xl font-bold text-slate-900">Categorías Populares</h2>
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-6">
+          {[
+            { name: "Textiles", color: "bg-orange-100 text-orange-800" },
+            { name: "Cerámica", color: "bg-blue-100 text-blue-800" },
+            { name: "Madera", color: "bg-amber-100 text-amber-800" },
+            { name: "Joyería", color: "bg-purple-100 text-purple-800" },
+            { name: "Cestería", color: "bg-green-100 text-green-800" },
+            { name: "Cuero", color: "bg-yellow-100 text-yellow-800" },
+          ].map((cat) => (
+            <Link
+              key={cat.name}
+              href={`/catalogo?category=${cat.name}`}
+              className={`flex h-32 items-center justify-center rounded-2xl ${cat.color} text-xl font-bold transition hover:scale-105 hover:shadow-lg`}
             >
-              <div>
-                <h2 className="text-2xl font-semibold text-slate-900">
-                  {beneficio.title}
-                </h2>
-              </div>
-              <ul className="space-y-3 text-sm text-slate-600">
-                {beneficio.items.map((item, index) => (
-                  <li key={index} className="flex items-start gap-2">
-                    <span className="mt-1 h-2 w-2 rounded-full bg-emerald-600" />
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </article>
+              {cat.name}
+            </Link>
           ))}
-        </section>
+        </div>
+      </section>
 
-        <section className="rounded-3xl border border-white/10 bg-white/5 px-6 py-10 sm:px-10">
-          <div className="mb-8">
-            <h2 className="text-3xl font-semibold text-white">¿Cómo funciona?</h2>
-            <p className="mt-4 text-lg text-emerald-100">
-              El proceso es simple y está diseñado para facilitar la conexión entre productores y compradores
-            </p>
+      {/* Featured Products */}
+      <section className="bg-white py-16">
+        <div className="px-6">
+          <div className="mb-8 flex items-center justify-between">
+            <h2 className="text-2xl font-bold text-slate-900">Novedades</h2>
+            <Link href="/catalogo" className="text-emerald-600 hover:text-emerald-700 font-semibold">
+              Ver todo &rarr;
+            </Link>
           </div>
-          
-          <div className="grid gap-6 md:grid-cols-2">
-            <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-6">
-              <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500 text-lg font-semibold text-white">
-                  1
-                </div>
-                <h3 className="text-xl font-semibold text-white">
-                  Regístrate
-                </h3>
-              </div>
-              <p className="text-sm text-emerald-100">
-                Crea tu cuenta como agricultor o restaurante. El proceso es rápido y sencillo, 
-                solo necesitas proporcionar información básica.
-              </p>
-            </div>
 
-            <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-6">
-              <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500 text-lg font-semibold text-white">
-                  2
-                </div>
-                <h3 className="text-xl font-semibold text-white">
-                  Explora o Publica
-                </h3>
-              </div>
-              <p className="text-sm text-emerald-100">
-                Si eres agricultor, publica tus productos con precios y disponibilidad. 
-                Si eres restaurante, explora el catálogo de productos frescos disponibles.
-              </p>
+          {loading ? (
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="h-80 animate-pulse rounded-2xl bg-slate-200" />
+              ))}
             </div>
-
-            <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-6">
-              <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500 text-lg font-semibold text-white">
-                  3
-                </div>
-                <h3 className="text-xl font-semibold text-white">
-                  Realiza Pedidos
-                </h3>
-              </div>
-              <p className="text-sm text-emerald-100">
-                Los restaurantes pueden armar pedidos con múltiples productos de diferentes agricultores 
-                en un solo lugar, simplificando el proceso de compra.
-              </p>
+          ) : (
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+              {featuredProducts.map((product) => (
+                <Link
+                  key={product.id}
+                  href={`/producto/${product.id}`}
+                  className="group relative flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white transition hover:shadow-xl"
+                >
+                  <div className="aspect-square w-full overflow-hidden bg-slate-100">
+                    {product.images?.[0] ? (
+                      <img
+                        src={product.images[0]}
+                        alt={product.name}
+                        className="h-full w-full object-cover transition duration-300 group-hover:scale-110"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-slate-400">
+                        <ShoppingBag className="h-12 w-12 opacity-20" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-1 flex-col p-4">
+                    <p className="text-xs font-medium text-emerald-600">{product.category}</p>
+                    <h3 className="mt-1 text-lg font-semibold text-slate-900 line-clamp-1">
+                      {product.name}
+                    </h3>
+                    <p className="text-sm text-slate-500">{product.artisan_name || "Artesano Local"}</p>
+                    <div className="mt-auto pt-4 flex items-center justify-between">
+                      <span className="text-lg font-bold text-slate-900">
+                        ${product.price.toLocaleString("es-CL")}
+                      </span>
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition group-hover:bg-emerald-500 group-hover:text-white">
+                        <ArrowRight className="h-4 w-4" />
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              ))}
             </div>
+          )}
+        </div>
+      </section>
 
-            <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-6">
-              <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500 text-lg font-semibold text-white">
-                  4
-                </div>
-                <h3 className="text-xl font-semibold text-white">
-                  Recibe y Entrega
-                </h3>
-              </div>
-              <p className="text-sm text-emerald-100">
-                Coordina la logística de entrega. Ofrecemos opciones flexibles como rutas agrupadas, 
-                retiro en puntos de encuentro o entrega directa.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <section className="rounded-3xl border border-white/10 bg-white/5 px-6 py-10 sm:px-10">
-          <div className="mb-8 text-center">
-            <h2 className="text-3xl font-semibold text-white">¿Por qué elegir AgroLink?</h2>
-          </div>
-          
-          <div className="grid gap-6 md:grid-cols-3">
-            <div className="rounded-2xl border border-white/10 bg-black/30 p-6 text-center">
-              <h3 className="mb-3 text-xl font-semibold text-white">
-                Economía Local
-              </h3>
-              <p className="text-sm text-emerald-100">
-                Fortalecemos la economía local conectando directamente a productores con compradores, 
-                eliminando intermediarios y mejorando los ingresos de los agricultores.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-black/30 p-6 text-center">
-              <h3 className="mb-3 text-xl font-semibold text-white">
-                Productos Frescos
-              </h3>
-              <p className="text-sm text-emerald-100">
-                Accede a productos recién cosechados de la Región de Los Lagos. 
-                Frescura y calidad garantizadas directamente desde el campo.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-black/30 p-6 text-center">
-              <h3 className="mb-3 text-xl font-semibold text-white">
-                Sostenibilidad
-              </h3>
-              <p className="text-sm text-emerald-100">
-                Promovemos prácticas agrícolas sostenibles y reducimos la huella de carbono 
-                al optimizar las rutas de entrega y acortar las distancias.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {!user && (
-          <section className="rounded-3xl border border-emerald-500/30 bg-gradient-to-br from-emerald-900/50 to-black p-8 text-center sm:p-12">
-            <h2 className="text-3xl font-semibold text-white">
-              ¿Listo para comenzar?
+      {/* Offers / Banner */}
+      <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+        <div className="relative overflow-hidden rounded-3xl bg-emerald-900 px-6 py-16 shadow-2xl sm:px-12 sm:py-24 lg:px-16">
+          <div className="relative z-10 flex flex-col items-center text-center">
+            <h2 className="mb-4 text-3xl font-bold text-white sm:text-4xl">
+              Ofertas de Temporada
             </h2>
-            <p className="mt-4 text-lg text-emerald-100">
-              Únete a nuestra comunidad y comienza a conectar con productores locales o restaurantes
+            <p className="mb-8 max-w-2xl text-lg text-emerald-100">
+              Aprovecha descuentos especiales en productos seleccionados.
+              Apoya a nuestros artesanos y lleva calidad a tu hogar.
             </p>
-            <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
-              <Link
-                href="/auth/registro"
-                className="rounded-full bg-white px-8 py-4 text-base font-semibold text-emerald-900 transition hover:bg-emerald-100"
-              >
-                Crear cuenta gratuita
-              </Link>
-              <Link
-                href="/auth/login"
-                className="rounded-full border-2 border-white/40 px-8 py-4 text-base font-semibold text-white transition hover:bg-white/10"
-              >
-                Ya tengo cuenta
-              </Link>
-            </div>
-          </section>
-        )}
+            <Link
+              href="/catalogo?sort_by=price_asc"
+              className="inline-flex items-center rounded-full bg-white px-8 py-3 text-base font-bold text-emerald-900 transition hover:bg-emerald-50"
+            >
+              Ver Ofertas
+              <Tag className="ml-2 h-5 w-5" />
+            </Link>
+          </div>
 
-        <Footer />
-      </div>
+          {/* Decorative circles */}
+          <div className="absolute left-0 top-0 -ml-24 -mt-24 h-96 w-96 rounded-full bg-emerald-800 opacity-50 blur-3xl" />
+          <div className="absolute bottom-0 right-0 -mb-24 -mr-24 h-96 w-96 rounded-full bg-blue-900 opacity-50 blur-3xl" />
+        </div>
+      </section>
+
+      <Footer />
     </div>
   );
 }

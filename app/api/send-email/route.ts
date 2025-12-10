@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
           "Authorization": `Bearer ${RESEND_API_KEY}`,
         },
         body: JSON.stringify({
-          from: "AgroLink <onboarding@resend.dev>",
+          from: "ArteCom <onboarding@resend.dev>",
           to: [to],
           subject: subject,
           html: html || text,

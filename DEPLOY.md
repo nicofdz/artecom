@@ -19,11 +19,11 @@
    - Ve a [vercel.com](https://vercel.com) e inicia sesión (o crea una cuenta)
    - Haz clic en "Add New Project"
    - Conecta tu repositorio de GitHub/GitLab/Bitbucket
-   - Selecciona el repositorio `marketplace-agro`
+   - Selecciona el repositorio `marketplace`
 
 3. **Configurar el proyecto**
    - **Framework Preset**: Next.js (debería detectarse automáticamente)
-   - **Root Directory**: `marketplace-agro` (si tu proyecto está en una subcarpeta)
+   - **Root Directory**: `marketplace` (si tu proyecto está en una subcarpeta)
    - **Build Command**: `npm run build` (o `next build`)
    - **Output Directory**: `.next` (Next.js lo maneja automáticamente)
    - **Install Command**: `npm install`
@@ -61,7 +61,7 @@
 
 3. **Desplegar**
    ```bash
-   cd marketplace-agro
+   cd marketplace
    vercel
    ```
    

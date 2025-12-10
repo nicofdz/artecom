@@ -11,7 +11,7 @@ export default function RegistroPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [userType, setUserType] = useState<"restaurante" | "agricultor">("restaurante");
+  const [userType, setUserType] = useState<"comprador" | "artesano">("comprador");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -63,7 +63,7 @@ export default function RegistroPage() {
         <header className="text-center">
           <h1 className="text-3xl font-semibold text-slate-900">Crear cuenta</h1>
           <p className="mt-2 text-sm text-slate-600">
-            Regístrate para comenzar a hacer pedidos
+            Regístrate para comprar o vender productos artesanales
           </p>
         </header>
 
@@ -143,17 +143,17 @@ export default function RegistroPage() {
             <select
               id="userType"
               value={userType}
-              onChange={(e) => setUserType(e.target.value as "restaurante" | "agricultor")}
+              onChange={(e) => setUserType(e.target.value as "comprador" | "artesano")}
               required
               className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm transition focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-200"
             >
-              <option value="restaurante">Restaurante / Cocina</option>
-              <option value="agricultor">Agricultor / Productor</option>
+              <option value="comprador">Comprador</option>
+              <option value="artesano">Artesano / Vendedor</option>
             </select>
             <p className="mt-2 text-xs text-slate-500">
-              {userType === "restaurante"
-                ? "Podrás hacer pedidos y gestionar tus compras."
-                : "Podrás subir productos y gestionar tu inventario."}
+              {userType === "comprador"
+                ? "Podrás comprar productos artesanales y gestionar tus pedidos."
+                : "Podrás vender tus productos artesanales y gestionar tu tienda."}
             </p>
           </div>
 

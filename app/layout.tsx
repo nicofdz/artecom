@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "./components/auth-provider";
 
+import Chatbot from "./components/chatbot";
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -14,9 +16,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AgroLink | Marketplace agrícola",
+  title: "ArteCom - Marketplace de Productos Artesanales Chilenos",
   description:
-    "Prototipo de marketplace para conectar agricultores locales con restaurantes y optimizar compras, precios y logística.",
+    "Plataforma que conecta artesanos locales con compradores, promoviendo el comercio justo y productos sustentables.",
 };
 
 export default function RootLayout({
@@ -25,11 +27,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es">
+    <html lang="es" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        suppressHydrationWarning
       >
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          {children}
+          <Chatbot />
+        </AuthProvider>
       </body>
     </html>
   );

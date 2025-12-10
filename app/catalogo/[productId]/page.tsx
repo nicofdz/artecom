@@ -2,24 +2,18 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState, use } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, use, Suspense, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { TopNav } from "../../components/top-nav";
 import { useAuth } from "../../components/auth-provider";
 import Footer from "../../components/footer";
+import { ReviewsSection } from "../../components/reviews-section";
+import Recommendations from "../../components/recommendations";
 
 function getProductImage(product: any): string {
-  // Si tiene image_url en la base de datos, usarla
-  if (product.image_url) {
-    return product.image_url;
+  if (product.images && product.images.length > 0) {
+    return product.images[0];
   }
-  // Fallback a mapeo por nombre si existe
-  const nameLower = product.name.toLowerCase();
-  if (nameLower.includes("espinaca")) return "/espinaca-baby.jpg";
-  if (nameLower.includes("betarraga")) return "/betarraga.jpg";
-  if (nameLower.includes("huevo")) return "/huevos-azules.jpg";
-  if (nameLower.includes("tomate")) return "/TOMATE.jpg";
-  if (nameLower.includes("zapallo")) return "/ZAPALLO.jpg";
   return "/next.svg";
 }
 
@@ -30,60 +24,56 @@ type ProductPageProps = {
 type Product = {
   id: string;
   name: string;
+  description: string | null;
   category: string;
-  harvestWindow: string;
-  priceRange: string;
-  availability: string;
-  sustainability: string;
-  highlights: string[];
-  image_url?: string;
-  producerSlug: string;
-  producerName: string;
-  sellerId?: string;
-  location: string;
-  badges: string[];
+  price: number;
+  stock: number;
+  images: string[];
+  materials: string[];
+  dimensions: string | null;
+  weight: number | null;
+  artisan_name?: string;
+  artisan_id?: string;
+  artisan_profiles?: {
+    region: string;
+    ciudad: string | null;
+  };
+  avg_rating?: number;
+  reviews_count?: number;
 };
 
-export default function ProductDetailPage({ params }: ProductPageProps) {
+function ProductDetailContent({ params }: ProductPageProps) {
+  // TODOS los hooks deben estar al principio, en el mismo orden siempre
+  // use() debe ir primero para evitar problemas de orden
+  const resolvedParams = use(params);
+  const productId = resolvedParams.productId;
+
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const { productId } = use(params);
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [orderId, setOrderId] = useState<string | null>(null);
+  const [showReviewForm, setShowReviewForm] = useState(false);
 
+  const searchParams = useSearchParams();
+
+  // Obtener parámetros de búsqueda de forma segura
   useEffect(() => {
-    if (!authLoading) {
-      if (!user) {
-        router.push(`/auth/login?redirect=/catalogo/${productId}`);
-      } else {
-        loadProduct();
-      }
-    }
-  }, [user, authLoading, router, productId]);
+    const orderIdParam = searchParams.get("order_id");
+    const reviewParam = searchParams.get("review") === "true";
+    setOrderId(orderIdParam);
+    setShowReviewForm(reviewParam);
+  }, [searchParams]);
 
-  async function loadProduct() {
+  const loadProduct = useCallback(async () => {
     try {
-      const response = await fetch("/api/products");
+      setLoading(true);
+      const response = await fetch(`/api/products?id=${productId}`);
       if (response.ok) {
-        const products = await response.json();
-        const foundProduct = products.find((p: any) => p.id === productId);
-        if (foundProduct) {
-          setProduct({
-            id: foundProduct.id,
-            name: foundProduct.name,
-            category: foundProduct.category,
-            harvestWindow: foundProduct.harvest_window,
-            priceRange: foundProduct.price_range,
-            availability: foundProduct.availability,
-            sustainability: foundProduct.sustainability,
-            highlights: foundProduct.highlights || [],
-            image_url: foundProduct.image_url,
-            producerSlug: foundProduct.user_id || "agricultor",
-            producerName: foundProduct.seller_name || "Agricultor",
-            sellerId: foundProduct.user_id || null,
-            location: foundProduct.location || "Local",
-            badges: ["Producto local"],
-          });
+        const data = await response.json();
+        if (data && data.length > 0) {
+          setProduct(data[0]);
         }
       }
     } catch (error) {
@@ -91,7 +81,14 @@ export default function ProductDetailPage({ params }: ProductPageProps) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [productId]);
+
+  useEffect(() => {
+    if (!authLoading) {
+      loadProduct();
+    }
+  }, [authLoading, loadProduct]);
+
 
   if (authLoading || loading) {
     return (
@@ -102,10 +99,6 @@ export default function ProductDetailPage({ params }: ProductPageProps) {
         </div>
       </div>
     );
-  }
-
-  if (!user) {
-    return null; // El useEffect redirigirá
   }
 
   if (!product) {
@@ -127,10 +120,15 @@ export default function ProductDetailPage({ params }: ProductPageProps) {
     );
   }
 
+  // Asegurar que images sea un array válido
+  const images = Array.isArray(product.images) && product.images.length > 0
+    ? product.images.filter(img => img && img.trim() !== '')
+    : ["/next.svg"];
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
       <TopNav />
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-10 sm:px-8 lg:px-12">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-10 sm:px-8 lg:px-12">
         <Link
           href="/catalogo"
           className="text-sm font-semibold text-emerald-600 transition hover:text-emerald-700"
@@ -145,86 +143,151 @@ export default function ProductDetailPage({ params }: ProductPageProps) {
           <h1 className="text-4xl font-semibold text-slate-900">
             {product.name}
           </h1>
-          <p className="text-base text-slate-600">{product.harvestWindow}</p>
-          <div className="flex flex-wrap gap-2 text-xs font-semibold text-emerald-700">
-            {product.badges.map((badge) => (
-              <span
-                key={`${product.id}-${badge}`}
-                className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1"
-              >
-                {badge}
-              </span>
-            ))}
+          <div className="text-base text-slate-600">
+            {product.description ? (
+              <p>{product.description}</p>
+            ) : (
+              <p className="italic text-slate-400">Este producto no tiene descripción disponible.</p>
+            )}
           </div>
+          {product.avg_rating && product.avg_rating > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-amber-400 text-lg">★</span>
+              <span className="text-lg font-semibold text-slate-900">
+                {product.avg_rating.toFixed(1)}
+              </span>
+              <span className="text-sm text-slate-500">
+                ({product.reviews_count || 0} {product.reviews_count === 1 ? "reseña" : "reseñas"})
+              </span>
+            </div>
+          )}
+          {product.materials && product.materials.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {product.materials.map((material, idx) => (
+                <span
+                  key={idx}
+                  className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700"
+                >
+                  {material}
+                </span>
+              ))}
+            </div>
+          )}
         </header>
 
         <div className="grid gap-8 lg:grid-cols-2">
-          {/* Imagen completa a la izquierda */}
-          <div className="relative w-full overflow-hidden rounded-3xl bg-slate-100">
-            <div className="relative aspect-[4/3] w-full">
-              <Image
-                src={getProductImage(product)}
-                alt={product.name}
-                fill
-                className="object-cover"
-                sizes="(max-width: 1024px) 100vw, 50vw"
-                priority
-              />
+          {/* Imágenes */}
+          <div className="space-y-4">
+            <div className="relative w-full overflow-hidden rounded-3xl bg-slate-100">
+              <div className="relative aspect-square w-full">
+                {images[currentImageIndex] && images[currentImageIndex] !== "/next.svg" ? (
+                  <Image
+                    src={images[currentImageIndex]}
+                    alt={product.name}
+                    fill
+                    className="object-cover"
+                    sizes="(max-width: 1024px) 100vw, 50vw"
+                    priority
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center bg-slate-200 text-slate-400">
+                    <span className="text-sm">Sin imagen disponible</span>
+                  </div>
+                )}
+              </div>
             </div>
+            {images.length > 1 && (
+              <div className="flex gap-2 overflow-x-auto">
+                {images.map((img, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setCurrentImageIndex(idx)}
+                    className={`relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-lg border-2 transition ${currentImageIndex === idx
+                      ? "border-emerald-500"
+                      : "border-slate-200"
+                      }`}
+                  >
+                    <Image
+                      src={img}
+                      alt={`${product.name} ${idx + 1}`}
+                      fill
+                      className="object-cover"
+                      sizes="80px"
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Información del producto a la derecha */}
+          {/* Información del producto */}
           <div className="flex flex-col gap-6 rounded-3xl border border-slate-200 bg-white p-8">
             <div className="grid gap-4 text-sm text-slate-700">
               <div>
-                <span className="text-slate-500">Precio guía:</span>{" "}
-                <span className="font-semibold text-slate-900">
-                  {product.priceRange}
+                <span className="text-slate-500">Precio:</span>{" "}
+                <span className="text-2xl font-bold text-emerald-600">
+                  ${product.price.toLocaleString("es-CL")}
                 </span>
               </div>
               <div>
-                <span className="text-slate-500">Disponibilidad:</span>{" "}
-                <span className="font-semibold text-slate-900">
-                  {product.availability}
+                <span className="text-slate-500">Stock disponible:</span>{" "}
+                <span className={`font-semibold ${product.stock > 0 ? "text-emerald-600" : "text-red-600"
+                  }`}>
+                  {product.stock} unidades
                 </span>
               </div>
+              {product.dimensions && (
+                <div>
+                  <span className="text-slate-500">Dimensiones:</span>{" "}
+                  <span className="font-semibold text-slate-900">
+                    {product.dimensions}
+                  </span>
+                </div>
+              )}
+              {product.weight && (
+                <div>
+                  <span className="text-slate-500">Peso:</span>{" "}
+                  <span className="font-semibold text-slate-900">
+                    {product.weight}g
+                  </span>
+                </div>
+              )}
               <div>
-                <span className="text-slate-500">Prácticas:</span>{" "}
+                <span className="text-slate-500">Artesano:</span>{" "}
                 <span className="font-semibold text-slate-900">
-                  {product.sustainability}
+                  {product.artisan_name || "No especificado"}
                 </span>
               </div>
-              <div>
-                <span className="text-slate-500">Vendedor:</span>{" "}
-                <span className="font-semibold text-slate-900">
-                  {product.producerName}
-                </span>
-              </div>
+              {product.artisan_profiles && (
+                <div>
+                  <span className="text-slate-500">Región:</span>{" "}
+                  <span className="font-semibold text-slate-900">
+                    {product.artisan_profiles.region}
+                    {product.artisan_profiles.ciudad && `, ${product.artisan_profiles.ciudad}`}
+                  </span>
+                </div>
+              )}
             </div>
 
-            <div className="border-t border-slate-200 pt-4">
-              <p className="mb-3 text-sm font-semibold text-slate-700">
-                Características destacadas:
-              </p>
-              <ul className="space-y-2 text-sm text-slate-600">
-                {product.highlights.map((highlight) => (
-                  <li key={highlight} className="flex items-start gap-2">
-                    <span className="mt-1 text-emerald-600">•</span>
-                    <span>{highlight}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            {product.materials && product.materials.length > 0 && (
+              <div className="border-t border-slate-200 pt-4">
+                <p className="mb-3 text-sm font-semibold text-slate-700">
+                  Materiales utilizados:
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {product.materials.map((material, idx) => (
+                    <span
+                      key={idx}
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1 text-sm text-slate-700"
+                    >
+                      {material}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="mt-auto space-y-3 border-t border-slate-200 pt-6">
-              {product.sellerId ? (
-                <Link
-                  href={`/agricultores/${product.sellerId}`}
-                  className="flex w-full items-center justify-center rounded-2xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700"
-                >
-                  Ver perfil del productor
-                </Link>
-              ) : null}
               <Link
                 href="/catalogo"
                 className="flex w-full items-center justify-center rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700"
@@ -234,10 +297,40 @@ export default function ProductDetailPage({ params }: ProductPageProps) {
             </div>
           </div>
         </div>
+
+        {/* Sección de reseñas */}
+        <div className="rounded-3xl border border-slate-200 bg-white p-8">
+          <ReviewsSection
+            productId={product.id}
+            artisanId={product.artisan_id}
+            showForm={showReviewForm}
+            orderId={orderId || undefined}
+            onReviewSubmitted={() => {
+              // Recargar producto para actualizar rating
+              loadProduct();
+            }}
+          />
+        </div>
+
+        {/* Sección de recomendaciones */}
+        <Recommendations productId={product.id} />
       </div>
       <Footer />
     </div>
   );
 }
 
-
+export default function ProductDetailPage({ params }: ProductPageProps) {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-slate-100 text-slate-900">
+        <TopNav />
+        <div className="flex min-h-screen items-center justify-center">
+          <p className="text-slate-600">Cargando...</p>
+        </div>
+      </div>
+    }>
+      <ProductDetailContent params={params} />
+    </Suspense>
+  );
+}

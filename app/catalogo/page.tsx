@@ -2,8 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useMemo, useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { TopNav } from "../components/top-nav";
 import { ProductModal } from "../components/product-modal";
 import { useAuth } from "../components/auth-provider";
@@ -13,20 +13,23 @@ import { getCart, saveCart, setCartItem, clearCart as clearCartStorage, type Car
 type CatalogItem = {
   id: string;
   name: string;
+  description: string | null;
   category: string;
-  harvestWindow: string;
-  priceRange: string;
-  availability: "Alta" | "Media" | "Baja";
-  sustainability: string;
-  highlights: string[];
-  producerSlug?: string;
-  producerName?: string;
-  sellerName?: string;
-  sellerId?: string;
-  location?: string;
-  badges?: string[];
-  image_url?: string;
-  stock?: number;
+  price: number;
+  stock: number;
+  images: string[];
+  materials: string[];
+  dimensions: string | null;
+  weight: number | null;
+  artisan_name?: string;
+  artisan_id?: string;
+  artisan_profiles?: {
+    region: string;
+    ciudad: string | null;
+    specialties: string[];
+  };
+  avg_rating?: number;
+  reviews_count?: number;
 };
 
 // Mapeo de IDs de productos a imágenes
@@ -39,37 +42,53 @@ const productImages: Record<string, string> = {
 };
 
 function getProductImage(product: CatalogItem): string {
-  // Si tiene image_url en la base de datos, usarla
-  if (product.image_url) {
-    return product.image_url;
+  // Si tiene imágenes en la base de datos, usar la primera
+  if (product.images && product.images.length > 0) {
+    return product.images[0];
   }
-  // Fallback a mapeo por nombre si existe
-  const nameLower = product.name.toLowerCase();
-  if (nameLower.includes("espinaca")) return "/espinaca-baby.jpg";
-  if (nameLower.includes("betarraga")) return "/betarraga.jpg";
-  if (nameLower.includes("huevo")) return "/huevos-azules.jpg";
-  if (nameLower.includes("tomate")) return "/TOMATE.jpg";
-  if (nameLower.includes("zapallo")) return "/ZAPALLO.jpg";
   return "/next.svg";
 }
 
-export default function CatalogoPage() {
+function CatalogoContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, loading: authLoading } = useAuth();
   const [cart, setCart] = useState<Cart>({});
-  const [selectedCategory, setSelectedCategory] = useState<string>("all");
-  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [selectedCategory, setSelectedCategory] = useState(searchParams.get("category") || "all");
+  const [searchQuery, setSearchQuery] = useState(searchParams.get("search") || "");
+  const [selectedRegion, setSelectedRegion] = useState(searchParams.get("region") || "all");
+  const [selectedMaterial, setSelectedMaterial] = useState(searchParams.get("material") || "all");
+  const [sortBy, setSortBy] = useState(searchParams.get("sort") || "recent");
   const [selectedProduct, setSelectedProduct] = useState<CatalogItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [initialLoad, setInitialLoad] = useState(true);
+  // filtersInitialized ya no es necesario con la inicialización directa
   const [quantityInputs, setQuantityInputs] = useState<Record<string, { show: boolean; value: number }>>({});
 
+  // Leer query params de la URL al cargar (solo una vez)
   useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/auth/login?redirect=/catalogo");
-    }
-  }, [user, authLoading, router]);
+    const category = searchParams.get("category") || "all";
+    const search = searchParams.get("search") || "";
+    const region = searchParams.get("region") || "all";
+    const material = searchParams.get("material") || "all";
+    const sort = searchParams.get("sort") || "recent";
+
+    // Solo actualizar si hay cambios reales para evitar bucles
+    if (category !== selectedCategory) setSelectedCategory(category);
+    if (search !== searchQuery) setSearchQuery(search);
+    if (region !== selectedRegion) setSelectedRegion(region);
+    if (material !== selectedMaterial) setSelectedMaterial(material);
+    if (sort !== sortBy) setSortBy(sort);
+  }, [searchParams]);
+
+  // Auth check removed to allow public access
+  // useEffect(() => {
+  //   if (!authLoading && !user) {
+  //     router.push("/auth/login?redirect=/catalogo");
+  //   }
+  // }, [user, authLoading, router]);
 
   // Cargar carrito desde localStorage al montar
   useEffect(() => {
@@ -77,9 +96,28 @@ export default function CatalogoPage() {
     setCart(savedCart);
   }, []);
 
+  // Actualizar URL cuando cambien los filtros
+  // Actualizar URL cuando cambian los filtros (sin recargar la página)
+  useEffect(() => {
+    // No necesitamos bloqueo de inicialización porque el estado ya nace inicializado
+    const params = new URLSearchParams();
+    if (selectedCategory !== "all") params.set("category", selectedCategory);
+    if (searchQuery.trim()) params.set("search", searchQuery.trim());
+    if (selectedRegion !== "all") params.set("region", selectedRegion);
+    if (selectedMaterial !== "all") params.set("material", selectedMaterial);
+    if (sortBy !== "recent") params.set("sort", sortBy);
+
+    const newUrl = params.toString()
+      ? `/catalogo?${params.toString()}`
+      : "/catalogo";
+
+    // Usar router.replace con scroll: false para evitar recargas
+    router.replace(newUrl, { scroll: false });
+  }, [selectedCategory, searchQuery, selectedRegion, selectedMaterial, sortBy, router]);
+
   useEffect(() => {
     loadProducts();
-  }, []);
+  }, [selectedCategory, searchQuery, selectedRegion, selectedMaterial, sortBy]);
 
   const cartItems = Object.entries(cart);
   const cartCount = cartItems.reduce((total, [, qty]) => total + qty, 0);
@@ -96,17 +134,17 @@ export default function CatalogoPage() {
   function addToCart(id: string, quantity: number = 1) {
     const product = catalogItems.find((item) => item.id === id);
     if (!product) return;
-    
+
     const currentCartQuantity = cart[id] || 0;
     const totalQuantity = currentCartQuantity + quantity;
     const availableStock = product.stock || 0;
-    
+
     // Validar que no se exceda el stock disponible
     if (totalQuantity > availableStock) {
       alert(`No hay suficiente stock disponible. Stock disponible: ${availableStock} unidades. Ya tienes ${currentCartQuantity} en el carrito.`);
       return;
     }
-    
+
     const newCart = setCartItem(id, totalQuantity);
     setCart(newCart);
     // Disparar evento después del render
@@ -118,15 +156,15 @@ export default function CatalogoPage() {
   function setCartQuantity(id: string, quantity: number) {
     const product = catalogItems.find((item) => item.id === id);
     if (!product) return;
-    
+
     const availableStock = product.stock || 0;
-    
+
     // Validar que no se exceda el stock disponible
     if (quantity > availableStock) {
       alert(`No hay suficiente stock disponible. Stock disponible: ${availableStock} unidades.`);
       return;
     }
-    
+
     const newCart = setCartItem(id, quantity);
     setCart(newCart);
     // Disparar evento después del render
@@ -173,45 +211,74 @@ export default function CatalogoPage() {
 
   async function loadProducts() {
     try {
-      setLoading(true);
-      const response = await fetch("/api/products?only_active=true");
+      // Solo mostrar loading de pantalla completa en la carga inicial
+      if (initialLoad) {
+        setLoading(true);
+      }
+      const params = new URLSearchParams();
+      params.set("only_active", "true");
+
+      if (selectedCategory !== "all") {
+        params.set("category", selectedCategory);
+      }
+
+      if (searchQuery.trim()) {
+        params.set("search", searchQuery.trim());
+      }
+
+      if (selectedRegion !== "all") {
+        params.set("region", selectedRegion);
+      }
+
+      if (selectedMaterial !== "all") {
+        params.set("material", selectedMaterial);
+      }
+
+      // Mapear sortBy a sort_by de la API
+      let apiSortBy = "recent";
+      let apiSortOrder = "desc";
+
+      switch (sortBy) {
+        case "price_asc":
+          apiSortBy = "price_asc";
+          apiSortOrder = "asc";
+          break;
+        case "price_desc":
+          apiSortBy = "price_desc";
+          apiSortOrder = "desc";
+          break;
+        case "rating":
+          apiSortBy = "rating";
+          apiSortOrder = "desc";
+          break;
+        case "sold":
+          apiSortBy = "sold";
+          apiSortOrder = "desc";
+          break;
+        default:
+          apiSortBy = "recent";
+          apiSortOrder = "desc";
+      }
+
+      params.set("sort_by", apiSortBy);
+      params.set("sort_order", apiSortOrder);
+
+      const response = await fetch(`/api/products?${params.toString()}`);
       if (response.ok) {
         const data = await response.json();
-        // Convertir productos de la BD al formato CatalogItem
-        const convertedProducts: CatalogItem[] = data.map((product: any) => {
-          const sellerName = product.seller_name || null;
-          const sellerId = product.user_id || null;
-          console.log(`[CATALOG] Producto ${product.name}: seller_name = ${sellerName}, sellerId = ${sellerId}`);
-          return {
-            id: product.id,
-            name: product.name,
-            category: product.category,
-            harvestWindow: product.harvest_window,
-            priceRange: product.price_range,
-            availability: product.availability,
-            sustainability: product.sustainability,
-            highlights: product.highlights || [],
-            image_url: product.image_url,
-            location: product.location || "Osorno",
-            sellerName: sellerName,
-            sellerId: sellerId,
-            stock: product.stock || 0,
-            // Valores por defecto ya que los productos de agricultores no tienen productor asociado
-            producerSlug: sellerId || "agricultor",
-            producerName: sellerName || "Agricultor",
-            badges: ["Producto local"],
-          };
-        });
-        setCatalogItems(convertedProducts);
+        setCatalogItems(data || []);
       }
     } catch (error) {
       console.error("Error al cargar productos:", error);
     } finally {
-      setLoading(false);
+      if (initialLoad) {
+        setLoading(false);
+        setInitialLoad(false);
+      }
     }
   }
 
-  // Obtener categorías únicas de los productos disponibles
+  // Obtener opciones de filtros únicas de los productos disponibles
   const categoryOptions = useMemo(() => {
     const categories = Array.from(
       new Set(catalogItems.map((item) => item.category))
@@ -222,93 +289,98 @@ export default function CatalogoPage() {
     ];
   }, [catalogItems]);
 
-  const filteredItems = useMemo(() => {
-    let filtered = catalogItems;
+  const regionOptions = useMemo(() => {
+    const regions = Array.from(
+      new Set(
+        catalogItems
+          .map((item) => item.artisan_profiles?.region)
+          .filter((r): r is string => Boolean(r))
+      )
+    ).sort();
+    return [
+      { value: "all", label: "Todas las regiones" },
+      ...regions.map((region) => ({ value: region, label: region })),
+    ];
+  }, [catalogItems]);
 
-    // Filtrar por categoría
-    if (selectedCategory !== "all") {
-      filtered = filtered.filter((item) => item.category === selectedCategory);
-    }
-
-    // Filtrar por búsqueda
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (item) =>
-          item.name.toLowerCase().includes(query) ||
-          item.category.toLowerCase().includes(query) ||
-          item.sustainability.toLowerCase().includes(query)
-      );
-    }
-
-    return filtered;
-  }, [selectedCategory, catalogItems, searchQuery]);
-
-  // Agrupar productos por ubicación
-  const productsByLocation = useMemo(() => {
-    const grouped: Record<string, CatalogItem[]> = {};
-    filteredItems.forEach((item) => {
-      const location = item.location || "Osorno";
-      if (!grouped[location]) {
-        grouped[location] = [];
+  const materialOptions = useMemo(() => {
+    const materials = new Set<string>();
+    catalogItems.forEach((item) => {
+      if (item.materials && Array.isArray(item.materials)) {
+        item.materials.forEach((m) => materials.add(m));
       }
-      grouped[location].push(item);
+    });
+    return [
+      { value: "all", label: "Todos los materiales" },
+      ...Array.from(materials).sort().map((material) => ({ value: material, label: material })),
+    ];
+  }, [catalogItems]);
+
+  const sortOptions = [
+    { value: "recent", label: "Más recientes" },
+    { value: "price_asc", label: "Precio: menor a mayor" },
+    { value: "price_desc", label: "Precio: mayor a menor" },
+    { value: "rating", label: "Mejor valorados" },
+    { value: "sold", label: "Más vendidos" },
+  ];
+
+  // Los productos ya vienen filtrados desde la API, solo agrupar por región
+  const productsByRegion = useMemo(() => {
+    const grouped: Record<string, CatalogItem[]> = {};
+    catalogItems.forEach((item) => {
+      const region = item.artisan_profiles?.region || "Sin región";
+      if (!grouped[region]) {
+        grouped[region] = [];
+      }
+      grouped[region].push(item);
     });
     return grouped;
-  }, [filteredItems]);
+  }, [catalogItems]);
 
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-slate-100 text-slate-900">
-        <TopNav />
-        <div className="flex min-h-screen items-center justify-center">
-          <p className="text-slate-600">Cargando...</p>
-        </div>
-      </div>
-    );
-  }
+  // if (!user) {
+  //   return null; // El useEffect redirigirá
+  // }
 
-  if (!user) {
-    return null; // El useEffect redirigirá
-  }
+  const [currentPage, setCurrentPage] = useState(1);
+  const PRODUCTS_PER_PAGE = 30;
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedCategory, searchQuery, selectedRegion, selectedMaterial, sortBy]);
+
+  const totalPages = Math.ceil(catalogItems.length / PRODUCTS_PER_PAGE);
+  const displayedItems = catalogItems.slice(
+    (currentPage - 1) * PRODUCTS_PER_PAGE,
+    currentPage * PRODUCTS_PER_PAGE
+  );
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
       <TopNav cartCount={cartCount} cartHref={cartHref || undefined} />
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-10 sm:px-8 lg:px-12">
-        <header className="flex flex-col gap-2">
-          <p className="text-sm font-semibold text-emerald-600">
-            Catálogo vivo
-          </p>
-          <h1 className="text-3xl font-semibold text-slate-900">
-            Productos disponibles para armar pedidos multiproveedor
-          </h1>
-          <p className="text-base text-slate-600">
-            Añade los productos al carrito y agenda la logística desde la vista
-            de pedidos.
-          </p>
-        </header>
 
-        <section className="rounded-3xl border border-slate-200 bg-white px-6 py-8 sm:px-10">
-          <div className="flex flex-col gap-6">
+      {/* Full-width container */}
+      <div className="flex gap-6 px-6 py-8">
+        {/* Left Sidebar - Filters */}
+        <aside className="w-64 flex-shrink-0">
+          <div className="sticky top-8 space-y-6">
+            {/* Header */}
             <div>
-              <p className="text-xs font-semibold uppercase text-emerald-600">
-                Filtros y búsqueda
+              <h1 className="text-2xl font-bold text-slate-900">Catálogo</h1>
+              <p className="mt-1 text-sm text-slate-600">
+                {catalogItems.length} productos
               </p>
-              <h2 className="mt-1 text-2xl font-semibold text-slate-900">
-                Buscar y filtrar productos
-              </h2>
             </div>
-            
-            {/* Barra de búsqueda */}
-            <div className="relative">
-              <label htmlFor="search" className="sr-only">
-                Buscar productos
+
+            {/* Search */}
+            <div>
+              <label htmlFor="search" className="mb-2 block text-sm font-semibold text-slate-700">
+                Buscar
               </label>
               <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                   <svg
-                    className="h-5 w-5 text-slate-400"
+                    className="h-4 w-4 text-slate-400"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -326,373 +398,264 @@ export default function CatalogoPage() {
                   id="search"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Buscar por nombre, categoría o prácticas..."
-                  className="w-full rounded-xl border border-slate-200 bg-white pl-12 pr-4 py-3 text-sm font-semibold text-slate-900 placeholder:text-slate-400 transition hover:border-emerald-500 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                  placeholder="Buscar productos..."
+                  className="w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                 />
                 {searchQuery && (
                   <button
                     type="button"
                     onClick={() => setSearchQuery("")}
-                    className="absolute inset-y-0 right-0 flex items-center pr-4 text-slate-400 hover:text-emerald-600"
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-emerald-600"
                   >
-                    <svg
-                      className="h-5 w-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M6 18L18 6M6 6l12 12"
-                      />
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                     </svg>
                   </button>
                 )}
               </div>
             </div>
 
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="relative flex-1 sm:max-w-xs">
-                <label htmlFor="category-filter" className="sr-only">
-                  Seleccionar categoría
-                </label>
-                <select
-                  id="category-filter"
-                  value={selectedCategory}
-                  onChange={(event) => setSelectedCategory(event.target.value)}
-                  className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-4 py-3 pr-10 text-sm font-semibold text-slate-900 transition hover:border-emerald-500 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
-                >
-                  {categoryOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-emerald-600">
-                  <svg
-                    className="h-5 w-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M19 9l-7 7-7-7"
-                    />
-                  </svg>
-                </span>
-              </div>
-              {(selectedCategory !== "all" || searchQuery) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedCategory("all");
-                    setSearchQuery("");
-                  }}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600 transition hover:border-emerald-500 hover:bg-emerald-50 hover:text-emerald-700"
-                >
-                  Limpiar filtros
-                </button>
-              )}
+            {/* Category Filter */}
+            <div>
+              <label htmlFor="category-filter" className="mb-2 block text-sm font-semibold text-slate-700">
+                Categoría
+              </label>
+              <select
+                id="category-filter"
+                value={selectedCategory}
+                onChange={(event) => setSelectedCategory(event.target.value)}
+                className="w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-900 transition focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+              >
+                {categoryOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </div>
-            {(selectedCategory !== "all" || searchQuery) && (
-              <p className="text-sm text-slate-600">
-                Mostrando {filteredItems.length} producto
-                {filteredItems.length !== 1 ? "s" : ""}
-                {searchQuery && ` para "${searchQuery}"`}
-              </p>
+
+            {/* Region Filter */}
+            <div>
+              <label htmlFor="region-filter" className="mb-2 block text-sm font-semibold text-slate-700">
+                Región
+              </label>
+              <select
+                id="region-filter"
+                value={selectedRegion}
+                onChange={(event) => setSelectedRegion(event.target.value)}
+                className="w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-900 transition focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+              >
+                {regionOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Material Filter */}
+            <div>
+              <label htmlFor="material-filter" className="mb-2 block text-sm font-semibold text-slate-700">
+                Material
+              </label>
+              <select
+                id="material-filter"
+                value={selectedMaterial}
+                onChange={(event) => setSelectedMaterial(event.target.value)}
+                className="w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-900 transition focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+              >
+                {materialOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Sort Filter */}
+            <div>
+              <label htmlFor="sort-filter" className="mb-2 block text-sm font-semibold text-slate-700">
+                Ordenar por
+              </label>
+              <select
+                id="sort-filter"
+                value={sortBy}
+                onChange={(event) => setSortBy(event.target.value)}
+                className="w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-900 transition focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+              >
+                {sortOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Clear Filters */}
+            {(selectedCategory !== "all" || searchQuery || selectedRegion !== "all" || selectedMaterial !== "all" || sortBy !== "recent") && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCategory("all");
+                  setSearchQuery("");
+                  setSelectedRegion("all");
+                  setSelectedMaterial("all");
+                  setSortBy("recent");
+                }}
+                className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:border-emerald-500 hover:bg-emerald-50 hover:text-emerald-700"
+              >
+                Limpiar filtros
+              </button>
             )}
           </div>
-        </section>
+        </aside>
 
-        <section className="rounded-3xl border border-slate-200 bg-white px-6 py-10 sm:px-10">
-          <div className="mb-8">
-            <p className="text-xs font-semibold uppercase text-emerald-600">
-              Inventario disponible
-            </p>
-            <h2 className="mt-1 text-3xl font-semibold text-slate-900">
-              Productos disponibles
-            </h2>
-          </div>
-
+        {/* Main Content - Products Grid */}
+        <main className="flex-1">
           {loading ? (
-            <p className="text-sm text-slate-600">Cargando productos...</p>
-          ) : filteredItems.length === 0 ? (
-            <p className="text-sm text-slate-600">
-              No encontramos productos. Ajusta los filtros o la búsqueda.
-            </p>
-          ) : (
-            <div className="space-y-12">
-              {Object.entries(productsByLocation).map(([location, items]) => (
-                <div key={location} className="space-y-6">
-                  <div className="flex items-center gap-3">
-                    <div className="h-px flex-1 bg-slate-200"></div>
-                    <h3 className="text-xl font-semibold text-slate-900">
-                      {location}
-                    </h3>
-                    <div className="h-px flex-1 bg-slate-200"></div>
-                    <span className="text-sm text-emerald-700">
-                      {items.length} producto{items.length !== 1 ? "s" : ""}
-                    </span>
-                  </div>
-                  <div className="grid gap-6 md:grid-cols-2">
-                    {items.map((item) => (
-                <article
-                  key={item.id}
-                  className="flex flex-col gap-5 rounded-3xl border border-slate-200 bg-white p-6 shadow-lg transition hover:-translate-y-1 hover:border-emerald-500 hover:shadow-xl"
-                >
-                  <button
-                    onClick={() => openProductModal(item)}
-                    className="group flex w-full flex-col gap-4 text-left"
-                  >
-                    <div className="relative h-40 w-full overflow-hidden rounded-2xl bg-slate-100">
-                      <Image
-                        src={getProductImage(item)}
-                        alt={item.name}
-                        fill
-                        className="object-cover transition group-hover:scale-105"
-                        sizes="(max-width: 768px) 100vw, 50vw"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <p className="text-xs font-semibold uppercase text-emerald-600">
-                        {item.category}
-                      </p>
-                      <h3 className="text-2xl font-semibold text-slate-900 group-hover:text-emerald-600">
-                        {item.name}
-                      </h3>
-                      <p className="text-sm text-slate-600">{item.harvestWindow}</p>
-                    </div>
-                    <div className="flex flex-wrap gap-2 text-xs font-semibold text-emerald-700">
-                      {(item.badges || []).map((badge) => (
-                        <span
-                          key={`${item.id}-${badge}`}
-                          className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1"
-                        >
-                          {badge}
-                        </span>
-                      ))}
-                    </div>
-                    <div className="grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
-                      <p>
-                        <span className="text-emerald-600 font-semibold">Precio guía:</span>{" "}
-                        {item.priceRange}
-                      </p>
-                      <p>
-                        <span className="text-emerald-600 font-semibold">Disponibilidad:</span>{" "}
-                        {item.availability}
-                      </p>
-                      <p>
-                        <span className="text-emerald-600 font-semibold">Stock disponible:</span>{" "}
-                        <span className={`font-semibold ${
-                          (item.stock || 0) > 0 ? "text-emerald-600" : "text-red-600"
-                        }`}>
-                          {item.stock || 0} unidades
-                        </span>
-                      </p>
-                      <p>
-                        <span className="text-emerald-600 font-semibold">Prácticas:</span>{" "}
-                        {item.sustainability}
-                      </p>
-                      <p>
-                        <span className="text-emerald-600 font-semibold">Vendedor:</span>{" "}
-                        <span className="font-semibold text-slate-900">
-                          {item.sellerName || item.producerName || "No especificado"}
-                        </span>
-                      </p>
-                      <p>
-                        <span className="text-emerald-600 font-semibold">Ubicación:</span>{" "}
-                        <span className="font-semibold text-slate-900">
-                          {item.location || "Osorno"}
-                        </span>
-                      </p>
-                    </div>
-                  </button>
-                  <div className="flex flex-wrap items-center gap-3 text-sm font-semibold">
-                    {item.sellerId ? (
-                      <Link
-                        href={`/agricultores/${item.sellerId}`}
-                        className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-slate-600 transition hover:border-emerald-500 hover:text-emerald-600"
-                      >
-                        Ver productor
-                      </Link>
-                    ) : null}
-                    
-                    {quantityInputs[item.id]?.show ? (
-                      <div className="flex items-center gap-2">
-                        <label className="text-xs text-slate-600">Cantidad:</label>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          pattern="[0-9]*"
-                          value={quantityInputs[item.id].value === 0 ? "" : quantityInputs[item.id].value}
-                          onChange={(e) => {
-                            const inputValue = e.target.value;
-                            // Permitir campo vacío mientras escribe
-                            if (inputValue === "") {
-                              setQuantityInputs((prev) => ({
-                                ...prev,
-                                [item.id]: { show: true, value: 0 },
-                              }));
-                              return;
-                            }
-                            // Solo permitir números
-                            const numericValue = inputValue.replace(/[^0-9]/g, "");
-                            if (numericValue === "") {
-                              setQuantityInputs((prev) => ({
-                                ...prev,
-                                [item.id]: { show: true, value: 0 },
-                              }));
-                              return;
-                            }
-                            const val = parseInt(numericValue, 10);
-                            const availableStock = item.stock || 0;
-                            const currentCartQuantity = cart[item.id] || 0;
-                            const maxAllowed = availableStock - currentCartQuantity;
-                            
-                            if (!isNaN(val) && val > 0) {
-                              // Limitar el valor al stock disponible
-                              const limitedVal = Math.min(val, maxAllowed);
-                              setQuantityInputs((prev) => ({
-                                ...prev,
-                                [item.id]: { show: true, value: limitedVal },
-                              }));
-                              if (val > maxAllowed) {
-                                alert(`No puedes agregar más de ${maxAllowed} unidades. Stock disponible: ${availableStock} unidades. Ya tienes ${currentCartQuantity} en el carrito.`);
-                              }
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              const currentValue = quantityInputs[item.id].value;
-                              const availableStock = item.stock || 0;
-                              const currentCartQuantity = cart[item.id] || 0;
-                              const maxAllowed = availableStock - currentCartQuantity;
-                              
-                              if (currentValue > 0 && currentValue <= maxAllowed) {
-                                addToCart(item.id, currentValue);
-                                setQuantityInputs((prev) => {
-                                  const newState = { ...prev };
-                                  delete newState[item.id];
-                                  return newState;
-                                });
-                              } else if (currentValue > maxAllowed) {
-                                alert(`No puedes agregar más de ${maxAllowed} unidades. Stock disponible: ${availableStock} unidades. Ya tienes ${currentCartQuantity} en el carrito.`);
-                              }
-                            }
-                          }}
-                          onFocus={(e) => {
-                            // Seleccionar todo el texto cuando se enfoca para que se pueda reemplazar fácilmente
-                            e.target.select();
-                          }}
-                          className="w-20 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
-                          autoFocus
-                          placeholder="1"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const currentValue = quantityInputs[item.id].value;
-                            const availableStock = item.stock || 0;
-                            const currentCartQuantity = cart[item.id] || 0;
-                            const maxAllowed = availableStock - currentCartQuantity;
-                            
-                            if (currentValue > 0 && currentValue <= maxAllowed) {
-                              addToCart(item.id, currentValue);
-                              setQuantityInputs((prev) => {
-                                const newState = { ...prev };
-                                delete newState[item.id];
-                                return newState;
-                              });
-                            } else if (currentValue > maxAllowed) {
-                              alert(`No puedes agregar más de ${maxAllowed} unidades. Stock disponible: ${availableStock} unidades. Ya tienes ${currentCartQuantity} en el carrito.`);
-                            }
-                          }}
-                          disabled={!quantityInputs[item.id]?.value || quantityInputs[item.id].value <= 0}
-                          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
-                        >
-                          Agregar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setQuantityInputs((prev) => {
-                              const newState = { ...prev };
-                              delete newState[item.id];
-                              return newState;
-                            });
-                          }}
-                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 transition hover:border-slate-300"
-                        >
-                          Cancelar
-                        </button>
-                      </div>
-                    ) : cart[item.id] ? (
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700">
-                          <button
-                            type="button"
-                            onClick={() => decrement(item.id)}
-                            className="h-5 w-5 rounded-full border border-emerald-400 text-center text-xs hover:bg-emerald-100"
-                          >
-                            −
-                          </button>
-                          <span>{cart[item.id]} en carrito</span>
-                          <button
-                            type="button"
-                            onClick={() => addToCart(item.id)}
-                            disabled={(cart[item.id] || 0) >= (item.stock || 0)}
-                            className="h-5 w-5 rounded-full border border-emerald-400 text-center text-xs hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
-                            title={(cart[item.id] || 0) >= (item.stock || 0) ? "Stock máximo alcanzado" : "Agregar más"}
-                          >
-                            +
-                          </button>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setQuantityInputs((prev) => ({
-                              ...prev,
-                              [item.id]: { show: true, value: 1 },
-                            }));
-                          }}
-                          className="rounded-lg border border-emerald-500 bg-white px-3 py-1 text-xs font-semibold text-emerald-600 transition hover:bg-emerald-50"
-                        >
-                          Editar cantidad
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if ((item.stock || 0) > 0) {
-                            setQuantityInputs((prev) => ({
-                              ...prev,
-                              [item.id]: { show: true, value: 1 },
-                            }));
-                          } else {
-                            alert("Este producto no tiene stock disponible.");
-                          }
-                        }}
-                        disabled={(item.stock || 0) <= 0}
-                        className="rounded-lg bg-emerald-600 px-4 py-2 text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
-                      >
-                        {(item.stock || 0) > 0 ? "Añadir al carrito" : "Sin stock"}
-                      </button>
-                    )}
-                  </div>
-                </article>
-                    ))}
-                  </div>
-                </div>
+            <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              {[...Array(10)].map((_, i) => (
+                <div key={i} className="h-80 animate-pulse rounded-lg bg-slate-200" />
               ))}
             </div>
+          ) : catalogItems.length === 0 ? (
+            <div className="flex min-h-[400px] items-center justify-center rounded-lg border-2 border-dashed border-slate-300 bg-white">
+              <div className="text-center">
+                <p className="text-lg font-semibold text-slate-900">No se encontraron productos</p>
+                <p className="mt-1 text-sm text-slate-600">Intenta ajustar los filtros o la búsqueda</p>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                {displayedItems.map((item) => (
+                  <article
+                    key={item.id}
+                    className="group flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white transition hover:shadow-lg"
+                  >
+                    <button
+                      onClick={() => openProductModal(item)}
+                      className="flex w-full flex-col text-left"
+                    >
+                      <div className="relative aspect-square w-full overflow-hidden bg-slate-100">
+                        <Image
+                          src={getProductImage(item)}
+                          alt={item.name}
+                          fill
+                          className="object-cover transition group-hover:scale-105"
+                          sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 25vw"
+                        />
+                      </div>
+                      <div className="flex flex-1 flex-col gap-2 p-3">
+                        <Link
+                          href={`/catalogo/${item.id}`}
+                          className="text-sm font-semibold text-slate-900 line-clamp-2 hover:text-emerald-600 transition-colors"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {item.name}
+                        </Link>
+
+                        {item.avg_rating != null && item.avg_rating > 0 && item.reviews_count != null && item.reviews_count > 0 && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-amber-500 text-sm">★</span>
+                            <span className="text-xs font-medium text-slate-700">
+                              {item.avg_rating.toFixed(1)}
+                            </span>
+                            <span className="text-xs text-slate-500">
+                              ({item.reviews_count})
+                            </span>
+                          </div>
+                        )}
+
+                        <div className="mt-auto">
+                          <p className="text-lg font-bold text-slate-900">
+                            ${item.price.toLocaleString('es-CL')}
+                          </p>
+                          <p className="text-xs text-slate-600">
+                            {item.artisan_name || "Artesano Local"}
+                          </p>
+                          <p className={`text-xs font-medium mt-1 ${item.stock > 0 ? "text-emerald-600" : "text-red-600"}`}>
+                            {item.stock > 0 ? `Stock: ${item.stock}` : "Sin stock"}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+
+                    <div className="border-t border-slate-100 p-3">
+                      {cart[item.id] ? (
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1">
+                            <button
+                              type="button"
+                              onClick={() => decrement(item.id)}
+                              className="flex h-6 w-6 items-center justify-center rounded text-emerald-700 hover:bg-emerald-100"
+                            >
+                              −
+                            </button>
+                            <span className="min-w-[20px] text-center text-sm font-semibold text-emerald-700">
+                              {cart[item.id]}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => addToCart(item.id)}
+                              disabled={(cart[item.id] || 0) >= (item.stock || 0)}
+                              className="flex h-6 w-6 items-center justify-center rounded text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if ((item.stock || 0) > 0) {
+                              addToCart(item.id, 1);
+                            } else {
+                              alert("Este producto no tiene stock disponible.");
+                            }
+                          }}
+                          disabled={(item.stock || 0) <= 0}
+                          className="w-full rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
+                        >
+                          {(item.stock || 0) > 0 ? "Agregar" : "Sin stock"}
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <div className="flex justify-center items-center gap-4 mt-8">
+                  <button
+                    onClick={() => {
+                      setCurrentPage(p => Math.max(1, p - 1));
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
+                    disabled={currentPage === 1}
+                    className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Anterior
+                  </button>
+                  <span className="text-sm font-medium text-slate-700">
+                    Página {currentPage} de {totalPages}
+                  </span>
+                  <button
+                    onClick={() => {
+                      setCurrentPage(p => Math.min(totalPages, p + 1));
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
+                    disabled={currentPage === totalPages}
+                    className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Siguiente
+                  </button>
+                </div>
+              )}
+            </>
           )}
-        </section>
 
           <ProductModal
             product={selectedProduct}
@@ -704,24 +667,40 @@ export default function CatalogoPage() {
             onDecrement={decrement}
           />
 
-        <div className="flex flex-wrap gap-3 py-4 text-sm font-semibold text-slate-600">
-          <button
-            type="button"
-            onClick={clearCart}
-            className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-slate-600 transition hover:border-emerald-500 hover:text-emerald-600 disabled:opacity-40"
-            disabled={cartItems.length === 0}
-          >
-            Vaciar carrito
-          </button>
-          {cartItems.length > 0 && (
-            <span className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-emerald-700">
-              {cartCount} unidades listas para envío
-            </span>
-          )}
-        </div>
+          <div className="mt-6 flex flex-wrap gap-3 text-sm font-semibold text-slate-600">
+            <button
+              type="button"
+              onClick={clearCart}
+              className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-slate-600 transition hover:border-emerald-500 hover:text-emerald-600 disabled:opacity-40"
+              disabled={cartItems.length === 0}
+            >
+              Vaciar carrito
+            </button>
+            {cartItems.length > 0 && (
+              <span className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-emerald-700">
+                {cartCount} unidades listas para envío
+              </span>
+            )}
+          </div>
+        </main>
       </div>
       <Footer />
     </div>
+  );
+}
+
+export default function CatalogoPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-slate-100 text-slate-900">
+        <TopNav />
+        <div className="flex min-h-screen items-center justify-center">
+          <p className="text-slate-600">Cargando catálogo...</p>
+        </div>
+      </div>
+    }>
+      <CatalogoContent />
+    </Suspense>
   );
 }
 

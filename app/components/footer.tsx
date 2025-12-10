@@ -14,14 +14,14 @@ export default function Footer() {
           <div className="flex flex-col gap-4">
             <div>
               <p className="text-xs uppercase tracking-[0.3em] text-emerald-300 mb-2">
-                AgroLink
+                ArteCom
               </p>
               <p className="text-base text-white font-semibold mb-2">
-                Marketplace Agrícola de la Región de Los Lagos
+                Marketplace de Productos Artesanales Chilenos
               </p>
               <p className="text-sm text-emerald-100">
-                Conectando agricultores locales con restaurantes y cocinas profesionales.
-                Promoviendo el consumo local y la economía sostenible.
+                Conectando artesanos locales con compradores que valoran productos únicos y hechos a mano.
+                Promoviendo el comercio justo y la economía sostenible.
               </p>
             </div>
           </div>
@@ -94,7 +94,7 @@ export default function Footer() {
 
         {/* Línea de copyright */}
         <div className="mt-8 border-t border-white/10 pt-6 text-center text-xs text-emerald-200/80">
-          <p>© {new Date().getFullYear()} AgroLink. Todos los derechos reservados.</p>
+          <p>© {new Date().getFullYear()} ArteCom. Todos los derechos reservados.</p>
         </div>
       </div>
     </footer>

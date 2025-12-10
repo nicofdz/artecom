@@ -17,7 +17,7 @@ function LoginForm() {
 
   useEffect(() => {
     if (user) {
-      const redirect = searchParams.get("redirect") || "/catalogo";
+      const redirect = searchParams.get("redirect") || "/";
       router.push(redirect);
     }
   }, [user, router, searchParams]);
@@ -36,7 +36,7 @@ function LoginForm() {
       if (signInError) throw signInError;
 
       if (data.user) {
-        const redirect = searchParams.get("redirect") || "/catalogo";
+        const redirect = searchParams.get("redirect") || "/";
         router.push(redirect);
         router.refresh();
       }

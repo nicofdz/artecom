@@ -1,6 +1,6 @@
 // Utilidades para manejar el carrito con localStorage
 
-const CART_STORAGE_KEY = "agrolink_cart";
+const CART_STORAGE_KEY = "artecom_cart";
 
 export type Cart = Record<string, number>;
 

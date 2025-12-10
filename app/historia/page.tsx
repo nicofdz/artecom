@@ -21,37 +21,39 @@ export default function HistoriaPage() {
             Nuestra Historia
           </p>
           <h1 className="text-4xl font-semibold text-white">
-            AgroLink: Conectando el Campo con la Cocina
+            ArteCom: Conectando Artesanos con Compradores
           </h1>
         </header>
 
         <section className="space-y-6 rounded-3xl border border-white/10 bg-slate-900/40 px-6 py-10 sm:px-10">
           <div className="space-y-4 text-emerald-100">
             <p className="text-lg leading-relaxed">
-              AgroLink nació de la necesidad de fortalecer la conexión entre los agricultores 
-              locales de la Región de Los Lagos y los restaurantes, cocinas profesionales y 
-              establecimientos gastronómicos que buscan productos frescos y de calidad.
+              ArteCom nació de la necesidad de fortalecer la conexión entre los artesanos 
+              chilenos y los compradores que valoran productos únicos, hechos a mano y con 
+              identidad local. Buscamos crear un espacio donde la artesanía tradicional y 
+              contemporánea encuentre su lugar en el mercado digital.
             </p>
 
             <p className="leading-relaxed">
-              En un contexto donde la cadena de suministro tradicional presenta desafíos como 
-              intermediarios múltiples, falta de transparencia en precios y dificultades 
-              logísticas, identificamos la oportunidad de crear una plataforma que acorte 
-              distancias y genere valor tanto para productores como para compradores.
+              En un contexto donde los artesanos enfrentan desafíos como la falta de canales 
+              de comercialización, intermediarios que reducen sus márgenes, y la dificultad 
+              para llegar a compradores que aprecian el valor de lo artesanal, identificamos 
+              la oportunidad de crear una plataforma que acorte distancias y genere valor tanto 
+              para creadores como para compradores.
             </p>
 
             <p className="leading-relaxed">
-              Nuestra misión es promover el consumo local, reducir la huella de carbono 
-              asociada al transporte de alimentos, y mejorar los ingresos de los agricultores 
-              al eliminar intermediarios innecesarios. Creemos firmemente que la tecnología 
-              puede ser un puente que conecte de manera eficiente y sostenible a quienes 
-              producen alimentos con quienes los transforman en experiencias culinarias.
+              Nuestra misión es promover el comercio justo, preservar las técnicas artesanales 
+              tradicionales, y mejorar los ingresos de los artesanos al eliminar intermediarios 
+              innecesarios. Creemos firmemente que la tecnología puede ser un puente que conecte 
+              de manera eficiente y sostenible a quienes crean productos únicos con quienes 
+              buscan piezas auténticas y con historia.
             </p>
 
             <p className="leading-relaxed">
-              AgroLink se posiciona como un marketplace especializado que no solo facilita 
-              transacciones, sino que también promueve prácticas agrícolas sostenibles y 
-              fortalece la economía local de la Región de Los Lagos.
+              ArteCom se posiciona como un marketplace especializado que no solo facilita 
+              transacciones, sino que también promueve prácticas de comercio justo, preserva 
+              el patrimonio artesanal chileno y fortalece la economía local y sostenible.
             </p>
           </div>
         </section>
@@ -60,9 +62,9 @@ export default function HistoriaPage() {
           <div className="space-y-3">
             <h2 className="text-2xl font-semibold text-white">Nuestra Visión</h2>
             <p className="text-emerald-100 leading-relaxed">
-              Ser la plataforma líder en la Región de Los Lagos para la comercialización 
-              directa de productos agrícolas locales, contribuyendo a una economía más 
-              sostenible y justa.
+              Ser la plataforma líder en Chile para la comercialización directa de productos 
+              artesanales, contribuyendo a una economía más sostenible, justa y que preserve 
+              el patrimonio cultural artesanal.
             </p>
           </div>
           <div className="space-y-3">
@@ -74,15 +76,15 @@ export default function HistoriaPage() {
               </li>
               <li className="flex items-start gap-2">
                 <span className="mt-1 h-2 w-2 rounded-full bg-emerald-500" />
-                <span>Apoyo a la economía local</span>
+                <span>Comercio justo y apoyo a artesanos</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="mt-1 h-2 w-2 rounded-full bg-emerald-500" />
-                <span>Sostenibilidad ambiental</span>
+                <span>Preservación del patrimonio artesanal</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="mt-1 h-2 w-2 rounded-full bg-emerald-500" />
-                <span>Innovación tecnológica</span>
+                <span>Sostenibilidad y economía circular</span>
               </li>
             </ul>
           </div>
