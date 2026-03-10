@@ -1,31 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://ckggbmwcbaiyrwiapygv.supabase.co";
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNrZ2dibXdjYmFpeXJ3aWFweWd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQwMDgxNjYsImV4cCI6MjA3OTU4NDE2Nn0.k8tyINQe9LLo16zffY1_1gZhwB71EH0vB-wFVsp-xP0";
-
-// Helper para obtener cliente de Supabase con autenticación
-function getSupabaseClient(request: NextRequest) {
-  const authHeader = request.headers.get("authorization");
-  
-  if (authHeader) {
-    const token = authHeader.replace("Bearer ", "");
-    return createClient(supabaseUrl, supabaseAnonKey, {
-      global: {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      },
-    });
-  }
-  
-  // Cliente anónimo por defecto
-  return createClient(supabaseUrl, supabaseAnonKey);
-}
-
 export async function POST(request: NextRequest) {
   try {
-    const supabase = getSupabaseClient(request);
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return NextResponse.json(
+        { error: "Configuración de Supabase incompleta en el servidor." },
+        { status: 500 }
+      );
+    }
+
+    // Usar service role key para evitar problemas de permisos en Storage
+    const supabase = createClient(
+      supabaseUrl,
+      supabaseServiceKey || supabaseAnonKey,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    );
+
     const formData = await request.formData();
     const file = formData.get("file") as File;
 
@@ -45,7 +40,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Validar tamaño (máximo 5MB)
-    const maxSize = 5 * 1024 * 1024; // 5MB
+    const maxSize = 5 * 1024 * 1024;
     if (file.size > maxSize) {
       return NextResponse.json(
         { error: "La imagen no puede ser mayor a 5MB" },
@@ -54,7 +49,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Generar nombre único para el archivo
-    const fileExt = file.name.split(".").pop();
+    const fileExt = file.name.split(".").pop()?.toLowerCase() || "jpg";
     const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
     const filePath = `products/${fileName}`;
 
@@ -62,9 +57,7 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // El bucket ya existe, no intentar crearlo (requiere permisos de admin)
-
-    // Subir a Supabase Storage
+    // Subir a Supabase Storage (bucket: product-images)
     const { data, error } = await supabase.storage
       .from("product-images")
       .upload(filePath, buffer, {
@@ -73,14 +66,25 @@ export async function POST(request: NextRequest) {
       });
 
     if (error) {
-      console.error("Error al subir imagen:", error);
-      // Si el error es que el bucket no existe, dar un mensaje más claro
-      if (error.message?.includes("Bucket not found")) {
+      console.error("[upload-image] Error al subir imagen:", error);
+
+      if (error.message?.includes("Bucket not found") || error.message?.includes("bucket")) {
         return NextResponse.json(
-          { error: "El bucket 'product-images' no existe. Por favor, créalo desde el dashboard de Supabase en Storage > Buckets." },
+          {
+            error:
+              "El bucket 'product-images' no existe. Créalo en: Supabase Dashboard → Storage → New bucket → nombre: 'product-images' → activar 'Public bucket'.",
+          },
           { status: 500 }
         );
       }
+
+      if (error.message?.includes("not authorized") || error.message?.includes("Unauthorized")) {
+        return NextResponse.json(
+          { error: "Sin permisos para subir imágenes. Verifica que SUPABASE_SERVICE_ROLE_KEY esté configurado en .env.local" },
+          { status: 403 }
+        );
+      }
+
       return NextResponse.json(
         { error: error.message || "Error al subir la imagen" },
         { status: 500 }
@@ -97,11 +101,10 @@ export async function POST(request: NextRequest) {
       { status: 200 }
     );
   } catch (error: any) {
-    console.error("Error:", error);
+    console.error("[upload-image] Error inesperado:", error);
     return NextResponse.json(
       { error: error.message || "Error al procesar la imagen" },
       { status: 500 }
     );
   }
 }
-
